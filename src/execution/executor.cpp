@@ -11,6 +11,90 @@
 #include "memory/memory.hpp"  // Memory subsystem and MemorySpace
 #include "logger.hpp"  // Logger for debugging
 
+namespace {
+
+bool tryMapSpecialRegister(const std::string& name, SpecialRegister& outRegister)
+{
+    if (name == "%tid.x") {
+        outRegister = SpecialRegister::TID_X;
+        return true;
+    }
+    if (name == "%tid.y") {
+        outRegister = SpecialRegister::TID_Y;
+        return true;
+    }
+    if (name == "%tid.z") {
+        outRegister = SpecialRegister::TID_Z;
+        return true;
+    }
+    if (name == "%ntid.x") {
+        outRegister = SpecialRegister::NTID_X;
+        return true;
+    }
+    if (name == "%ntid.y") {
+        outRegister = SpecialRegister::NTID_Y;
+        return true;
+    }
+    if (name == "%ntid.z") {
+        outRegister = SpecialRegister::NTID_Z;
+        return true;
+    }
+    if (name == "%ctaid.x") {
+        outRegister = SpecialRegister::CTAID_X;
+        return true;
+    }
+    if (name == "%ctaid.y") {
+        outRegister = SpecialRegister::CTAID_Y;
+        return true;
+    }
+    if (name == "%ctaid.z") {
+        outRegister = SpecialRegister::CTAID_Z;
+        return true;
+    }
+    if (name == "%nctaid.x") {
+        outRegister = SpecialRegister::NCTAID_X;
+        return true;
+    }
+    if (name == "%nctaid.y") {
+        outRegister = SpecialRegister::NCTAID_Y;
+        return true;
+    }
+    if (name == "%nctaid.z") {
+        outRegister = SpecialRegister::NCTAID_Z;
+        return true;
+    }
+    if (name == "%warpsize") {
+        outRegister = SpecialRegister::WARPSIZE;
+        return true;
+    }
+    if (name == "%laneid") {
+        outRegister = SpecialRegister::LANEID;
+        return true;
+    }
+    if (name == "%clock") {
+        outRegister = SpecialRegister::CLOCK;
+        return true;
+    }
+    if (name == "%clock64") {
+        outRegister = SpecialRegister::CLOCK64;
+        return true;
+    }
+
+    return false;
+}
+
+void applyThreadExecutionContext(RegisterBank& registerBank, const ThreadExecutionContext& context)
+{
+    registerBank.setThreadDimensions(context.blockDimX, context.blockDimY, context.blockDimZ);
+    registerBank.setGridDimensions(context.gridDimX, context.gridDimY, context.gridDimZ);
+    registerBank.setBlockId(context.blockIdxX, context.blockIdxY, context.blockIdxZ);
+    registerBank.setWarpSize(context.warpSize);
+    registerBank.setThreadId(context.threadIdxX, context.threadIdxY, context.threadIdxZ);
+    registerBank.setLaneId(context.laneId);
+}
+
+} // namespace
+
 // Private implementation class
 class PTXExecutor::Impl {
 public:
@@ -58,6 +142,7 @@ public:
         m_decodedInstructions = m_decoder->getDecodedInstructions();
         m_currentInstructionIndex = 0;
         m_executionComplete = false;
+        m_hasSingleThreadExecutionContext = false;
 
         // Build control flow graph from decoded instructions
         std::vector<std::vector<size_t>> cfg;
@@ -72,6 +157,7 @@ public:
     // Set decoded instructions directly
     void setDecodedInstructions(const std::vector<DecodedInstruction>& decodedInstructions) {
         m_decodedInstructions = decodedInstructions;
+        m_hasSingleThreadExecutionContext = false;
     }
     
     // Set current instruction index
@@ -86,6 +172,10 @@ public:
     
     // Execute all instructions
     bool execute() {
+        if (m_hasSingleThreadExecutionContext) {
+            return executeSingleThreadReplay();
+        }
+
         if (m_decodedInstructions.empty() || m_executionComplete) {
             std::cout << "No instructions to execute" << std::endl;
             return false;
@@ -238,6 +328,52 @@ public:
     void setPerformanceCounters(PerformanceCounters& performanceCounters)
     {
         m_performanceCounters = &performanceCounters;
+    }
+
+    void setSingleThreadExecutionContext(const ThreadExecutionContext& context)
+    {
+        m_singleThreadExecutionContext = context;
+        m_hasSingleThreadExecutionContext = true;
+    }
+
+    void clearSingleThreadExecutionContext()
+    {
+        m_hasSingleThreadExecutionContext = false;
+    }
+
+    bool hasSingleThreadExecutionContext() const
+    {
+        return m_hasSingleThreadExecutionContext;
+    }
+
+    bool executeSingleThreadReplay() {
+        if (m_decodedInstructions.empty() || m_executionComplete) {
+            std::cout << "No instructions to execute" << std::endl;
+            return false;
+        }
+
+        applyThreadExecutionContext(*m_registerBank, m_singleThreadExecutionContext);
+
+        constexpr size_t kMaxReplaySteps = 1'000'000;
+        size_t executedSteps = 0;
+
+        while (!m_executionComplete && m_currentInstructionIndex < m_decodedInstructions.size()) {
+            if (executedSteps++ >= kMaxReplaySteps) {
+                std::cerr << "Single-thread replay exceeded the instruction limit" << std::endl;
+                return false;
+            }
+
+            m_performanceCounters->increment(PerformanceCounterIDs::CYCLES);
+
+            const DecodedInstruction& instr = m_decodedInstructions[m_currentInstructionIndex];
+            if (!executeDecodedInstruction(instr)) {
+                std::cerr << "Error executing instruction" << std::endl;
+                return false;
+            }
+        }
+
+        m_executionComplete = true;
+        return true;
     }
 
     // Execute a single instruction
@@ -1659,25 +1795,61 @@ public:
             m_currentInstructionIndex++;
             return true;
         }
+
+        auto readFloatSource = [this](const Operand& operand) -> float {
+            if (operand.type == OperandType::IMMEDIATE) {
+                uint32_t bits = static_cast<uint32_t>(operand.immediateValue);
+                float value = 0.0f;
+                std::memcpy(&value, &bits, sizeof(value));
+                return value;
+            }
+
+            if (operand.type == OperandType::REGISTER) {
+                return m_registerBank->readFloatRegister(operand.registerIndex);
+            }
+
+            uint32_t bits = static_cast<uint32_t>(getSourceBits(operand, DataType::F32));
+            float value = 0.0f;
+            std::memcpy(&value, &bits, sizeof(value));
+            return value;
+        };
+
+        auto readDoubleSource = [this](const Operand& operand) -> double {
+            if (operand.type == OperandType::IMMEDIATE) {
+                uint64_t bits = static_cast<uint64_t>(operand.immediateValue);
+                double value = 0.0;
+                std::memcpy(&value, &bits, sizeof(value));
+                return value;
+            }
+
+            if (operand.type == OperandType::REGISTER) {
+                return m_registerBank->readDoubleRegister(operand.registerIndex);
+            }
+
+            uint64_t bits = getSourceBits(operand, DataType::F64);
+            double value = 0.0;
+            std::memcpy(&value, &bits, sizeof(value));
+            return value;
+        };
         
         // Select based on data type
         if (instr.dataType == DataType::S32 || instr.dataType == DataType::U32 || 
             instr.dataType == DataType::S64 || instr.dataType == DataType::U64) {
             // Integer types
-            uint64_t src1 = m_registerBank->readRegister(instr.sources[0].registerIndex);
-            uint64_t src2 = m_registerBank->readRegister(instr.sources[1].registerIndex);
+            uint64_t src1 = static_cast<uint64_t>(getSourceValue(instr.sources[0]));
+            uint64_t src2 = static_cast<uint64_t>(getSourceValue(instr.sources[1]));
             uint64_t result = pred ? src1 : src2;
             m_registerBank->writeRegister(instr.dest.registerIndex, result);
         } else if (instr.dataType == DataType::F32) {
             // Single precision float
-            float src1 = m_registerBank->readFloatRegister(instr.sources[0].registerIndex);
-            float src2 = m_registerBank->readFloatRegister(instr.sources[1].registerIndex);
+            float src1 = readFloatSource(instr.sources[0]);
+            float src2 = readFloatSource(instr.sources[1]);
             float result = pred ? src1 : src2;
             m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
         } else if (instr.dataType == DataType::F64) {
             // Double precision float
-            double src1 = m_registerBank->readDoubleRegister(instr.sources[0].registerIndex);
-            double src2 = m_registerBank->readDoubleRegister(instr.sources[1].registerIndex);
+            double src1 = readDoubleSource(instr.sources[0]);
+            double src2 = readDoubleSource(instr.sources[1]);
             double result = pred ? src1 : src2;
             m_registerBank->writeDoubleRegister(instr.dest.registerIndex, result);
         }
@@ -2091,6 +2263,17 @@ public:
                 m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_READS);
                 return static_cast<int64_t>(m_registerBank->readRegister(operand.registerIndex));
             
+            case OperandType::SPECIAL:
+                {
+                    SpecialRegister specialRegister;
+                    if (!tryMapSpecialRegister(operand.labelName, specialRegister)) {
+                        std::cerr << "Unknown special register: " << operand.labelName << std::endl;
+                        return 0;
+                    }
+
+                    return static_cast<int64_t>(m_registerBank->readSpecialRegister(specialRegister));
+                }
+
             case OperandType::IMMEDIATE:
                 return operand.immediateValue;
             
@@ -2565,6 +2748,8 @@ public:
     unsigned int m_blockDimX = 1;
     unsigned int m_blockDimY = 1;
     unsigned int m_blockDimZ = 1;
+    bool m_hasSingleThreadExecutionContext = false;
+    ThreadExecutionContext m_singleThreadExecutionContext;
     
     // Divergence handling
     DivergenceStack m_divergenceStack;
@@ -2772,4 +2957,16 @@ void PTXExecutor::getGridDimensions(unsigned int& gridDimX, unsigned int& gridDi
     blockDimX = pImpl->m_blockDimX;
     blockDimY = pImpl->m_blockDimY;
     blockDimZ = pImpl->m_blockDimZ;
+}
+
+void PTXExecutor::setSingleThreadExecutionContext(const ThreadExecutionContext& context) {
+    pImpl->setSingleThreadExecutionContext(context);
+}
+
+void PTXExecutor::clearSingleThreadExecutionContext() {
+    pImpl->clearSingleThreadExecutionContext();
+}
+
+bool PTXExecutor::hasSingleThreadExecutionContext() const {
+    return pImpl->hasSingleThreadExecutionContext();
 }

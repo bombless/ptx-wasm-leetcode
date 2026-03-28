@@ -95,6 +95,7 @@ if(EMSCRIPTEN)
 
     set(BARRACUDA_WEB_OUTPUT_DIR "${CMAKE_BINARY_DIR}/webapp")
     set(BARRACUDA_WEB_JS "${BARRACUDA_WEB_OUTPUT_DIR}/barracuda.js")
+    set(PTX_WEB_INDEX_HTML "${BARRACUDA_WEB_OUTPUT_DIR}/index.html")
     set(BARRACUDA_WEB_SOURCES
         ${CMAKE_SOURCE_DIR}/web/barracuda_web_bridge.c
         ${BARRACUDA_ROOT}/src/fe/bc_err.c
@@ -140,6 +141,19 @@ if(EMSCRIPTEN)
 
     add_custom_target(barracuda_web DEPENDS "${BARRACUDA_WEB_JS}")
 
+    add_custom_command(
+        OUTPUT "${PTX_WEB_INDEX_HTML}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${BARRACUDA_WEB_OUTPUT_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/web/index.html
+            "${PTX_WEB_INDEX_HTML}"
+        DEPENDS ${CMAKE_SOURCE_DIR}/web/index.html
+        COMMENT "Copying browser UI assets"
+        VERBATIM
+    )
+
+    add_custom_target(ptx_web_ui DEPENDS "${PTX_WEB_INDEX_HTML}")
+
     add_executable(ptx_web
         web/ptx_web_bridge.cpp
     )
@@ -172,16 +186,9 @@ if(EMSCRIPTEN)
         "SHELL:-sNO_EXIT_RUNTIME=1"
         "SHELL:-sFORCE_FILESYSTEM=1"
         "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-        "SHELL:-sEXPORTED_FUNCTIONS=['_malloc','_free','_ptxvm_load_program','_ptxvm_get_entry_count','_ptxvm_get_entry_name','_ptxvm_get_param_count','_ptxvm_get_param_name','_ptxvm_get_param_type','_ptxvm_is_param_pointer','_ptxvm_run_vector_add','_ptxvm_get_result_count','_ptxvm_get_result_value','_ptxvm_get_last_error']"
+        "SHELL:-sEXPORTED_FUNCTIONS=['_malloc','_free','_ptxvm_load_program','_ptxvm_get_entry_count','_ptxvm_get_entry_name','_ptxvm_get_param_count','_ptxvm_get_param_name','_ptxvm_get_param_type','_ptxvm_is_param_pointer','_ptxvm_run_vector_add','_ptxvm_run_matrix_multiplication','_ptxvm_get_result_count','_ptxvm_get_result_value','_ptxvm_get_last_error']"
         "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS','HEAPF32']"
     )
 
-    add_dependencies(ptx_web barracuda_web)
-
-    add_custom_command(TARGET ptx_web POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/web/index.html
-            $<TARGET_FILE_DIR:ptx_web>/index.html
-        COMMENT "Copying browser UI assets"
-    )
+    add_dependencies(ptx_web barracuda_web ptx_web_ui)
 endif()

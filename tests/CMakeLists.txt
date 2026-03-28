@@ -15,6 +15,7 @@ add_executable(system_tests
     system_tests/smoke_test.cpp
     system_tests/parser_compatibility_test.cpp
     system_tests/barracuda_ptx_compatibility_test.cpp
+    system_tests/matrix_multiplication_compatibility_test.cpp
     # system_tests/performance_test.cpp
     # system_tests/memory_performance_test.cpp
     # system_tests/reconvergence_performance_test.cpp

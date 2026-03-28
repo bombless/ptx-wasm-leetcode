@@ -12,6 +12,7 @@ enum class OperandType {
     IMMEDIATE,     // Immediate value
     MEMORY,        // Memory address
     PREDICATE,     // Predicate operand
+    SPECIAL,       // PTX special register operand
     LABEL,         // Label operand (for branches)
     UNKNOWN        // Unknown operand type
 };

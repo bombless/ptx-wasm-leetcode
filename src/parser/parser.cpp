@@ -18,6 +18,31 @@ bool isFunctionDeclarationLine(const std::string& line)
     return std::regex_search(line, functionDeclRegex);
 }
 
+bool isSpecialRegisterToken(const std::string& token)
+{
+    return token == "%tid.x" || token == "%tid.y" || token == "%tid.z" ||
+           token == "%ntid.x" || token == "%ntid.y" || token == "%ntid.z" ||
+           token == "%ctaid.x" || token == "%ctaid.y" || token == "%ctaid.z" ||
+           token == "%nctaid.x" || token == "%nctaid.y" || token == "%nctaid.z" ||
+           token == "%warpsize" || token == "%laneid" ||
+           token == "%clock" || token == "%clock64";
+}
+
+bool parsePTXHexImmediate(const std::string& token, int64_t& outValue)
+{
+    if (token.size() == 10 && token.rfind("0f", 0) == 0) {
+        outValue = static_cast<int64_t>(std::stoul(token.substr(2), nullptr, 16));
+        return true;
+    }
+
+    if (token.size() == 18 && token.rfind("0d", 0) == 0) {
+        outValue = static_cast<int64_t>(std::stoull(token.substr(2), nullptr, 16));
+        return true;
+    }
+
+    return false;
+}
+
 } // namespace
 
 // PTXParser::Impl - 私有实现类
@@ -942,6 +967,13 @@ Operand PTXParser::Impl::parseOperand(const std::string &str)
             }
             return op;
         }
+
+        if (isSpecialRegisterToken(s))
+        {
+            op.type = OperandType::SPECIAL;
+            op.labelName = s;
+            return op;
+        }
         
         // Regular register (%rN, %fN, %dN, %rdN, etc.)
         op.type = OperandType::REGISTER;
@@ -1003,6 +1035,11 @@ Operand PTXParser::Impl::parseOperand(const std::string &str)
         op.type = OperandType::IMMEDIATE;
         try
         {
+            if (parsePTXHexImmediate(s, op.immediateValue))
+            {
+                return op;
+            }
+
             // Check if it's a floating point number (contains '.' or 'e'/'E' for scientific notation)
             if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos)
             {
@@ -1015,7 +1052,7 @@ Operand PTXParser::Impl::parseOperand(const std::string &str)
             else
             {
                 // Parse as integer
-                op.immediateValue = std::stoll(s);
+                op.immediateValue = std::stoll(s, nullptr, 0);
             }
         }
         catch (...)

@@ -196,6 +196,21 @@
       background:
         linear-gradient(180deg, rgba(88, 166, 255, 0.12), rgba(88, 166, 255, 0.04)),
         rgba(255, 255, 255, 0.02);
+      cursor: pointer;
+      transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+    }
+
+    .problem-row:hover {
+      transform: translateY(-1px);
+      border-color: rgba(88, 166, 255, 0.28);
+    }
+
+    .problem-row.active {
+      border-color: rgba(88, 166, 255, 0.42);
+      background:
+        linear-gradient(180deg, rgba(88, 166, 255, 0.18), rgba(88, 166, 255, 0.06)),
+        rgba(255, 255, 255, 0.03);
+      box-shadow: inset 0 0 0 1px rgba(88, 166, 255, 0.10);
     }
 
     .problem-row small {
@@ -445,6 +460,12 @@
       gap: 14px;
     }
 
+    .dimension-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
     .field label,
     .label {
       display: block;
@@ -455,6 +476,7 @@
     }
 
     .field input[type="file"],
+    .field input[type="number"],
     .field select,
     .field textarea {
       width: 100%;
@@ -484,6 +506,7 @@
     }
 
     .field input[type="file"]:focus,
+    .field input[type="number"]:focus,
     .field select:focus,
     .field textarea:focus {
       border-color: rgba(88, 166, 255, 0.55);
@@ -575,6 +598,7 @@
       border: 1px solid rgba(255, 255, 255, 0.06);
       color: #dbe8f8;
       line-height: 1.7;
+      white-space: pre-wrap;
       word-break: break-word;
       min-height: 88px;
     }
@@ -661,6 +685,10 @@
       .tabbar {
         overflow: auto;
       }
+
+      .dimension-grid {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -703,11 +731,8 @@
             <span class="badge accent">CUDA -> PTX</span>
             <span class="badge warn">No External Libs</span>
           </div>
-          <div class="hint-box" style="margin-top: 14px;">
+          <div id="judge-contract" class="hint-box" style="margin-top: 14px;">
             <strong>Judge Contract</strong>
-            右侧会先用 BarraCUDA 在浏览器里把 <span style="font-family: var(--mono);">.cu</span> 编译成 PTX。
-            上传的 kernel 需要是三个 pointer 加一个 <span style="font-family: var(--mono);">.u32 N</span> 的向量加法签名，
-            这版页面会把结果当作 <span style="font-family: var(--mono);">vector C</span> 来校验。
           </div>
         </div>
       </section>
@@ -756,10 +781,7 @@
 
               <div class="content-block">
                 <h3>Performance Note</h3>
-                <div class="hint-box">
-                  Judge data is lightweight in-browser, but the original challenge measures performance at
-                  <span style="font-family: var(--mono);">N = 25,000,000</span>.
-                  Keep your kernel launch and memory access pattern GPU-friendly.
+                <div id="performance-note" class="hint-box">
                 </div>
               </div>
             </section>
@@ -782,13 +804,10 @@
               <article class="starter-card" style="margin-top: 14px;">
                 <header>
                   <strong>Submission Hint</strong>
-                  <span class="badge warn">Upload PTX</span>
+                  <span class="badge warn">Upload .cu</span>
                 </header>
                 <div class="starter-body">
-                  <div class="hint-box">
-                    Write your CUDA kernel with the required signature, then paste or import the
-                    <span style="font-family: var(--mono);">.cu</span> source on the right side. The page will compile it with the in-browser
-                    BarraCUDA compiler, detect your entry function, and run it against the selected sample input.
+                  <div id="submission-hint" class="hint-box">
                   </div>
                 </div>
               </article>
@@ -845,24 +864,40 @@
           <header>
             <div>
               <h2>Custom Testcase</h2>
-              <p class="judge-subtle">Use the official examples or paste your own float arrays.</p>
+              <p id="custom-testcase-subtle" class="judge-subtle">Use the official examples or paste your own float arrays.</p>
             </div>
-            <div class="quick-actions">
-              <button id="example-1-button" class="chip-button" type="button">Use Example 1</button>
-              <button id="example-2-button" class="chip-button" type="button">Use Example 2</button>
-            </div>
+            <div id="example-buttons" class="quick-actions"></div>
           </header>
           <div class="judge-body">
             <div class="field-grid">
               <div class="field">
-                <label for="input-a">Vector A</label>
+                <label id="input-a-label" for="input-a">Vector A</label>
                 <textarea id="input-a"></textarea>
               </div>
 
               <div class="field">
-                <label for="input-b">Vector B</label>
+                <label id="input-b-label" for="input-b">Vector B</label>
                 <textarea id="input-b"></textarea>
               </div>
+
+              <div id="matrix-dims" class="dimension-grid" hidden>
+                <div class="field">
+                  <label for="matrix-m">Rows M</label>
+                  <input id="matrix-m" type="number" min="1" step="1" />
+                </div>
+
+                <div class="field">
+                  <label for="matrix-n">Shared N</label>
+                  <input id="matrix-n" type="number" min="1" step="1" />
+                </div>
+
+                <div class="field">
+                  <label for="matrix-k">Cols K</label>
+                  <input id="matrix-k" type="number" min="1" step="1" />
+                </div>
+              </div>
+
+              <div id="testcase-help" class="hint-box"></div>
 
               <div class="button-row">
                 <button id="run-button" class="primary" type="button" disabled>Run Judge</button>
@@ -875,8 +910,8 @@
         <article class="card judge-card">
           <header>
             <div>
-              <h2>Output Vector C</h2>
-              <p class="judge-subtle">The final result must be stored in vector C. The judge compares it to a CPU reference.</p>
+              <h2 id="result-title">Output Vector C</h2>
+              <p id="result-subtle" class="judge-subtle">The final result must be stored in vector C. The judge compares it to a CPU reference.</p>
             </div>
           </header>
           <div class="judge-body">
@@ -902,55 +937,148 @@
   </div>
 
   <script>
-    const PROBLEM = {
-      id: "001",
-      title: "Element-Wise Vector Add",
-      difficulty: "Easy",
-      statement:
-        "Write a GPU program that performs element-wise addition of two vectors containing 32-bit floating point numbers. The program should take two input vectors of equal length and produce a single output vector containing their sum.",
-      requirements: [
-        "External libraries are not permitted.",
-        "The solve function signature must remain unchanged.",
-        "The final result must be stored in vector C."
-      ],
-      constraints: [
-        "Input vectors A and B have identical lengths.",
-        "1 <= N <= 100,000,000.",
-        "Performance is measured with N = 25,000,000."
-      ],
-      examples: [
-        {
-          label: "Example 1",
-          a: [1.0, 2.0, 3.0, 4.0],
-          b: [5.0, 6.0, 7.0, 8.0],
-          c: [6.0, 8.0, 10.0, 12.0]
-        },
-        {
-          label: "Example 2",
-          a: [1.5, 1.5, 1.5],
-          b: [2.3, 2.3, 2.3],
-          c: [3.8, 3.8, 3.8]
-        }
-      ],
-      starterCode: [
-        "extern \"C\" __global__",
-        "void solve(const float* A, const float* B, float* C, int N) {",
-        "    int idx = blockIdx.x * blockDim.x + threadIdx.x;",
-        "",
-        "    if (idx >= N) {",
-        "        return;",
-        "    }",
-        "",
-        "    // TODO: write the result into C[idx]",
-        "    // C[idx] = ...",
-        "}"
-      ].join("\n")
-    };
+    const PROBLEMS = [
+      {
+        id: "001",
+        title: "Element-Wise Vector Add",
+        difficulty: "Easy",
+        kind: "vector-add",
+        listTag: "Warmup",
+        statement:
+          "Write a GPU program that performs element-wise addition of two vectors containing 32-bit floating point numbers. The program should take two input vectors of equal length and produce a single output vector containing their sum.",
+        requirements: [
+          "External libraries are not permitted.",
+          "The solve function signature must remain unchanged.",
+          "The final result must be stored in vector C."
+        ],
+        constraints: [
+          "Input vectors A and B have identical lengths.",
+          "1 <= N <= 100,000,000.",
+          "Performance is measured with N = 25,000,000."
+        ],
+        performanceNote:
+          "Judge data is lightweight in-browser, but the original challenge measures performance at N = 25,000,000. Keep your kernel launch and memory access pattern GPU-friendly.",
+        judgeContract:
+          "The browser judge expects a PTX entry kernel with three pointer parameters plus one 32-bit length N, then validates that vector C matches a CPU reference.",
+        submissionHint:
+          "Write or import a .cu submission on the right side. The page compiles it to PTX in-browser with BarraCUDA, detects the generated entry kernel, and runs it against the selected testcase.",
+        testcaseHint:
+          "Use the official examples or paste your own float arrays.",
+        testcaseHelp:
+          "Enter comma-separated or whitespace-separated float values. The judge compares C against CPU element-wise addition.",
+        resultTitle: "Output Vector C",
+        resultSubtitle:
+          "The final result must be stored in vector C. The judge compares it to a CPU reference.",
+        starterCode: [
+          "extern \"C\" __global__",
+          "void solve(const float* A, const float* B, float* C, int N) {",
+          "    int idx = blockIdx.x * blockDim.x + threadIdx.x;",
+          "",
+          "    if (idx >= N) {",
+          "        return;",
+          "    }",
+          "",
+          "    // TODO: write the result into C[idx]",
+          "    // C[idx] = ...",
+          "}"
+        ].join("\n"),
+        examples: [
+          {
+            label: "Example 1",
+            inputA: [1.0, 2.0, 3.0, 4.0],
+            inputB: [5.0, 6.0, 7.0, 8.0],
+            expected: [6.0, 8.0, 10.0, 12.0]
+          },
+          {
+            label: "Example 2",
+            inputA: [1.5, 1.5, 1.5],
+            inputB: [2.3, 2.3, 2.3],
+            expected: [3.8, 3.8, 3.8]
+          }
+        ]
+      },
+      {
+        id: "002",
+        title: "Matrix Multiplication",
+        difficulty: "Easy",
+        kind: "matrix-multiplication",
+        listTag: "LeetGPU #2",
+        statement:
+          "Write a GPU program that multiplies two matrices of 32-bit floating point numbers. Given matrix A of dimensions M x N and matrix B of dimensions N x K, compute the product matrix C = A x B, which has dimensions M x K. All matrices are stored in row-major format.",
+        requirements: [
+          "External libraries are not permitted.",
+          "The solve function signature must remain unchanged.",
+          "The final result must be stored in matrix C."
+        ],
+        constraints: [
+          "1 <= M, N, K <= 8192.",
+          "Matrices A and B are row-major buffers with lengths M x N and N x K.",
+          "Performance is measured with M = 8192, N = 6144, K = 4096."
+        ],
+        performanceNote:
+          "Judge data is lightweight in-browser, but the original challenge measures performance at M = 8192, N = 6144, K = 4096. Tile your work and keep memory access patterns coherent.",
+        judgeContract:
+          "The browser judge expects a PTX entry kernel with three pointer parameters plus 32-bit M, N, and K scalars. It treats A as M x N and B as N x K in row-major order, then validates matrix C against a CPU reference.",
+        submissionHint:
+          "Write or import a .cu submission on the right side. The page compiles it to PTX in-browser with BarraCUDA, detects the generated entry kernel, and runs it against the selected testcase.",
+        testcaseHint:
+          "Paste row-major float arrays for A and B, then provide dimensions M, N, and K.",
+        testcaseHelp:
+          "Matrix A must contain M x N floats and Matrix B must contain N x K floats. The judge replays one output cell per virtual GPU thread.",
+        resultTitle: "Output Matrix C",
+        resultSubtitle:
+          "The final result must be stored in matrix C. The judge compares it to a CPU row-major multiplication result.",
+        starterCode: [
+          "extern \"C\" __global__",
+          "void solve(const float* A, const float* B, float* C, int M, int N, int K) {",
+          "    int col = blockIdx.x * blockDim.x + threadIdx.x;",
+          "    int row = blockIdx.y * blockDim.y + threadIdx.y;",
+          "",
+          "    if (row >= M || col >= K) {",
+          "        return;",
+          "    }",
+          "",
+          "    float acc = 0.0f;",
+          "    for (int i = 0; i < N; ++i) {",
+          "        acc += A[row * N + i] * B[i * K + col];",
+          "    }",
+          "",
+          "    C[row * K + col] = acc;",
+          "}"
+        ].join("\n"),
+        examples: [
+          {
+            label: "Example 1",
+            rowsM: 2,
+            sharedN: 2,
+            colsK: 2,
+            inputA: [1.0, 2.0, 3.0, 4.0],
+            inputB: [5.0, 6.0, 7.0, 8.0],
+            expected: [19.0, 22.0, 43.0, 50.0]
+          },
+          {
+            label: "Example 2",
+            rowsM: 1,
+            sharedN: 3,
+            colsK: 1,
+            inputA: [1.0, 2.0, 3.0],
+            inputB: [4.0, 5.0, 6.0],
+            expected: [32.0]
+          }
+        ]
+      }
+    ];
 
     const logQueue = [];
+    let currentProblemIndex = 0;
     let currentExampleIndex = 0;
+    let loadedProgramProblemId = null;
     let barraModule = null;
     let barraModulePromise = null;
+
+    function getCurrentProblem() {
+      return PROBLEMS[currentProblemIndex];
+    }
 
     function formatNumber(value) {
       if (!Number.isFinite(value)) {
@@ -963,6 +1091,24 @@
 
     function formatVector(values) {
       return `[${values.map((value) => formatNumber(value)).join(", ")}]`;
+    }
+
+    function buildMatrixRows(values, rows, cols) {
+      const matrixRows = [];
+      for (let row = 0; row < rows; row += 1) {
+        const start = row * cols;
+        matrixRows.push(values.slice(start, start + cols));
+      }
+      return matrixRows;
+    }
+
+    function formatMatrixInline(values, rows, cols) {
+      return `[${buildMatrixRows(values, rows, cols).map((row) => formatVector(row)).join(", ")}]`;
+    }
+
+    function formatMatrixMultiline(values, rows, cols) {
+      const lines = buildMatrixRows(values, rows, cols).map((row) => `  ${formatVector(row)}`);
+      return `[\n${lines.join("\n")}\n]`;
     }
 
     function pushLog(message, kind = "runtime") {
@@ -1030,41 +1176,139 @@
         .filter((value) => Number.isFinite(value));
     }
 
-    function useExample(index) {
-      const example = PROBLEM.examples[index];
+    function parsePositiveInt(text) {
+      const value = Number.parseInt(String(text ?? "").trim(), 10);
+      return Number.isInteger(value) && value > 0 ? value : null;
+    }
+
+    function buildVectorAddExpected(inputA, inputB) {
+      return inputA.map((value, index) => value + inputB[index]);
+    }
+
+    function buildMatrixMultiplyExpected(inputA, inputB, rowsM, sharedN, colsK) {
+      const result = new Array(rowsM * colsK).fill(0);
+
+      for (let row = 0; row < rowsM; row += 1) {
+        for (let col = 0; col < colsK; col += 1) {
+          let acc = 0;
+          for (let i = 0; i < sharedN; i += 1) {
+            acc += inputA[row * sharedN + i] * inputB[i * colsK + col];
+          }
+          result[row * colsK + col] = acc;
+        }
+      }
+
+      return result;
+    }
+
+    function arraysAlmostEqual(actual, expected, tolerance = 1e-4) {
+      return actual.length === expected.length &&
+        actual.every((value, index) => Math.abs(value - expected[index]) <= tolerance);
+    }
+
+    function clearLoadedProgramState() {
+      loadedProgramProblemId = null;
+
+      const select = document.getElementById("kernel-select");
+      const meta = document.getElementById("kernel-meta");
+      if (select) {
+        select.innerHTML = "";
+        select.disabled = true;
+      }
+      if (meta) {
+        meta.innerHTML = '<li class="meta-item">Compile a valid CUDA submission to inspect the kernel signature.</li>';
+      }
+
+      document.getElementById("run-button").disabled = true;
+    }
+
+    function useExample(index, pushMessage = true) {
+      const problem = getCurrentProblem();
+      const example = problem.examples[index];
+      if (!example) {
+        return;
+      }
+
       currentExampleIndex = index;
-      document.getElementById("input-a").value = example.a.join(", ");
-      document.getElementById("input-b").value = example.b.join(", ");
-      pushLog(`Loaded ${example.label} into the testcase editor.`, "runtime");
+      document.getElementById("input-a").value = example.inputA.join(", ");
+      document.getElementById("input-b").value = example.inputB.join(", ");
+
+      if (problem.kind === "matrix-multiplication") {
+        document.getElementById("matrix-m").value = String(example.rowsM);
+        document.getElementById("matrix-n").value = String(example.sharedN);
+        document.getElementById("matrix-k").value = String(example.colsK);
+      }
+
+      if (pushMessage) {
+        pushLog(`Loaded ${example.label} into the testcase editor.`, "runtime");
+      }
+
       renderEmptyState();
+    }
+
+    function selectProblem(index, pushMessage = true) {
+      if (index < 0 || index >= PROBLEMS.length) {
+        return;
+      }
+
+      currentProblemIndex = index;
+      currentExampleIndex = 0;
+
+      renderProblemList();
+      renderStatement();
+      renderExamples();
+      renderExampleButtons();
+      renderTestcaseEditor();
+      resetSourceEditor(false);
+      setGeneratedPTX("");
+      clearLoadedProgramState();
+      useExample(0, false);
+      renderEmptyState();
+
+      if (pushMessage) {
+        const problem = getCurrentProblem();
+        pushLog(`Switched to Problem ${problem.id}: ${problem.title}.`, "runtime");
+      }
     }
 
     function renderProblemList() {
       const list = document.getElementById("problem-list");
       list.innerHTML = "";
 
-      const item = document.createElement("li");
-      item.className = "problem-row";
-      item.innerHTML = `
-        <small>Problem ${PROBLEM.id}</small>
-        <strong>${PROBLEM.title}</strong>
-        <div class="badge-row">
-          <span class="badge good">${PROBLEM.difficulty}</span>
-          <span class="badge accent">First Challenge</span>
-        </div>
-      `;
-      list.appendChild(item);
+      PROBLEMS.forEach((problem, index) => {
+        const item = document.createElement("li");
+        item.className = `problem-row ${index === currentProblemIndex ? "active" : ""}`;
+        item.innerHTML = `
+          <small>Problem ${problem.id}</small>
+          <strong>${problem.title}</strong>
+          <div class="badge-row">
+            <span class="badge good">${problem.difficulty}</span>
+            <span class="badge accent">${problem.listTag}</span>
+          </div>
+        `;
+        item.addEventListener("click", () => selectProblem(index));
+        list.appendChild(item);
+      });
     }
 
     function renderStatement() {
-      document.getElementById("problem-id").textContent = PROBLEM.id;
-      document.getElementById("problem-title").textContent = PROBLEM.title;
-      document.getElementById("problem-difficulty").textContent = PROBLEM.difficulty;
-      document.getElementById("problem-statement").textContent = PROBLEM.statement;
+      const problem = getCurrentProblem();
+
+      document.getElementById("problem-id").textContent = problem.id;
+      document.getElementById("problem-title").textContent = problem.title;
+      document.getElementById("problem-difficulty").textContent = problem.difficulty;
+      document.getElementById("problem-statement").textContent = problem.statement;
+      document.getElementById("starter-code").textContent = problem.starterCode;
+      document.getElementById("performance-note").textContent = problem.performanceNote;
+      document.getElementById("submission-hint").textContent = problem.submissionHint;
+      document.getElementById("custom-testcase-subtle").textContent = problem.testcaseHint;
+      document.getElementById("result-title").textContent = problem.resultTitle;
+      document.getElementById("result-subtle").textContent = problem.resultSubtitle;
+      document.getElementById("judge-contract").innerHTML = `<strong>Judge Contract</strong>${problem.judgeContract}`;
 
       const requirementsList = document.getElementById("requirements-list");
       requirementsList.innerHTML = "";
-      for (const requirement of PROBLEM.requirements) {
+      for (const requirement of problem.requirements) {
         const item = document.createElement("li");
         item.textContent = requirement;
         requirementsList.appendChild(item);
@@ -1072,13 +1316,86 @@
 
       const constraintsList = document.getElementById("constraints-list");
       constraintsList.innerHTML = "";
-      for (const constraint of PROBLEM.constraints) {
+      for (const constraint of problem.constraints) {
         const item = document.createElement("li");
         item.textContent = constraint;
         constraintsList.appendChild(item);
       }
+    }
 
-      document.getElementById("starter-code").textContent = PROBLEM.starterCode;
+    function renderExamples() {
+      const problem = getCurrentProblem();
+      const grid = document.getElementById("example-grid");
+      grid.innerHTML = "";
+
+      problem.examples.forEach((example, index) => {
+        const card = document.createElement("article");
+        card.className = "example-card";
+
+        let bodyHtml = "";
+        if (problem.kind === "vector-add") {
+          bodyHtml = `
+            <span class="vector-line">Input:  A = ${formatVector(example.inputA)}</span>
+            <span class="vector-line">        B = ${formatVector(example.inputB)}</span>
+            <span class="vector-line">Output: C = ${formatVector(example.expected)}</span>
+          `;
+        } else {
+          bodyHtml = `
+            <span class="vector-line">Input:  A (${example.rowsM} x ${example.sharedN}) = ${formatMatrixInline(example.inputA, example.rowsM, example.sharedN)}</span>
+            <span class="vector-line">        B (${example.sharedN} x ${example.colsK}) = ${formatMatrixInline(example.inputB, example.sharedN, example.colsK)}</span>
+            <span class="vector-line">Output: C (${example.rowsM} x ${example.colsK}) = ${formatMatrixInline(example.expected, example.rowsM, example.colsK)}</span>
+          `;
+        }
+
+        card.innerHTML = `
+          <header>
+            <strong>${example.label}</strong>
+            <button class="chip-button" type="button" data-example-index="${index}">Use This Case</button>
+          </header>
+          <div class="example-body">
+            ${bodyHtml}
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      grid.querySelectorAll("[data-example-index]").forEach((button) => {
+        button.addEventListener("click", () => useExample(Number.parseInt(button.dataset.exampleIndex, 10)));
+      });
+    }
+
+    function renderExampleButtons() {
+      const problem = getCurrentProblem();
+      const container = document.getElementById("example-buttons");
+      container.innerHTML = "";
+
+      problem.examples.forEach((example, index) => {
+        const button = document.createElement("button");
+        button.className = "chip-button";
+        button.type = "button";
+        button.textContent = example.label;
+        button.addEventListener("click", () => useExample(index));
+        container.appendChild(button);
+      });
+    }
+
+    function renderTestcaseEditor() {
+      const problem = getCurrentProblem();
+      const matrixDims = document.getElementById("matrix-dims");
+      const testcaseHelp = document.getElementById("testcase-help");
+
+      document.getElementById("input-a-label").textContent =
+        problem.kind === "vector-add" ? "Vector A" : "Matrix A (row-major)";
+      document.getElementById("input-b-label").textContent =
+        problem.kind === "vector-add" ? "Vector B" : "Matrix B (row-major)";
+
+      document.getElementById("input-a").placeholder =
+        problem.kind === "vector-add" ? "1.0, 2.0, 3.0" : "1.0, 2.0, 3.0, 4.0";
+      document.getElementById("input-b").placeholder =
+        problem.kind === "vector-add" ? "4.0, 5.0, 6.0" : "5.0, 6.0, 7.0, 8.0";
+
+      matrixDims.hidden = problem.kind !== "matrix-multiplication";
+      testcaseHelp.textContent = problem.testcaseHelp;
     }
 
     function resetSourceEditor(pushMessage = true) {
@@ -1087,7 +1404,7 @@
         return;
       }
 
-      editor.value = PROBLEM.starterCode;
+      editor.value = getCurrentProblem().starterCode;
       if (pushMessage) {
         pushLog("Reset the CUDA editor to the starter code.", "runtime");
       }
@@ -1100,32 +1417,6 @@
       }
 
       preview.value = text || "";
-    }
-
-    function renderExamples() {
-      const grid = document.getElementById("example-grid");
-      grid.innerHTML = "";
-
-      PROBLEM.examples.forEach((example, index) => {
-        const card = document.createElement("article");
-        card.className = "example-card";
-        card.innerHTML = `
-          <header>
-            <strong>${example.label}</strong>
-            <button class="chip-button" type="button" data-example-index="${index}">Use This Case</button>
-          </header>
-          <div class="example-body">
-            <span class="vector-line">Input:  A = ${formatVector(example.a)}</span>
-            <span class="vector-line">        B = ${formatVector(example.b)}</span>
-            <span class="vector-line">Output: C = ${formatVector(example.c)}</span>
-          </div>
-        `;
-        grid.appendChild(card);
-      });
-
-      grid.querySelectorAll("[data-example-index]").forEach((button) => {
-        button.addEventListener("click", () => useExample(Number.parseInt(button.dataset.exampleIndex, 10)));
-      });
     }
 
     function setupTabs() {
@@ -1148,6 +1439,11 @@
       meta.innerHTML = "";
 
       if (!ensureRuntime()) {
+        return;
+      }
+
+      if (select.selectedIndex < 0) {
+        meta.innerHTML = '<li class="meta-item">No kernel metadata yet. Compile a valid CUDA submission first.</li>';
         return;
       }
 
@@ -1183,16 +1479,15 @@
       vector.textContent = "C = [ waiting for a run ]";
     }
 
-    function renderResults(inputA, inputB, output) {
+    function renderVectorResults(inputA, inputB, output) {
       const summary = document.getElementById("result-summary");
       const list = document.getElementById("result-list");
       const vector = document.getElementById("result-vector");
       summary.innerHTML = "";
       list.innerHTML = "";
 
-      const expected = inputA.map((value, index) => value + inputB[index]);
-      const allMatch = output.length === expected.length &&
-        output.every((value, index) => Math.abs(value - expected[index]) < 1e-4);
+      const expected = buildVectorAddExpected(inputA, inputB);
+      const allMatch = arraysAlmostEqual(output, expected);
 
       const status = document.createElement("span");
       status.className = `pill ${allMatch ? "good" : "warn"}`;
@@ -1216,6 +1511,44 @@
         const item = document.createElement("li");
         item.className = "result-item";
         item.innerHTML = `<strong>C[${i}] = ${formatNumber(output[i])}</strong>A=${formatNumber(inputA[i])}, B=${formatNumber(inputB[i])}, expected=${formatNumber(expected[i])}`;
+        list.appendChild(item);
+      }
+    }
+
+    function renderMatrixResults(inputA, inputB, rowsM, sharedN, colsK, output) {
+      const summary = document.getElementById("result-summary");
+      const list = document.getElementById("result-list");
+      const vector = document.getElementById("result-vector");
+      summary.innerHTML = "";
+      list.innerHTML = "";
+
+      const expected = buildMatrixMultiplyExpected(inputA, inputB, rowsM, sharedN, colsK);
+      const allMatch = arraysAlmostEqual(output, expected, 1e-3);
+
+      const status = document.createElement("span");
+      status.className = `pill ${allMatch ? "good" : "warn"}`;
+      status.textContent = allMatch ? "Accepted" : "Wrong Answer";
+
+      const shape = document.createElement("span");
+      shape.className = "pill";
+      shape.textContent = `Shape: ${rowsM} x ${colsK}`;
+
+      const reference = document.createElement("span");
+      reference.className = "pill";
+      reference.textContent = "Reference: CPU row-major multiply";
+
+      summary.appendChild(status);
+      summary.appendChild(shape);
+      summary.appendChild(reference);
+
+      vector.textContent = `C = ${formatMatrixMultiline(output, rowsM, colsK)}`;
+
+      const actualRows = buildMatrixRows(output, rowsM, colsK);
+      const expectedRows = buildMatrixRows(expected, rowsM, colsK);
+      for (let row = 0; row < rowsM; row += 1) {
+        const item = document.createElement("li");
+        item.className = "result-item";
+        item.innerHTML = `<strong>Row ${row}</strong>actual=${formatVector(actualRows[row])}, expected=${formatVector(expectedRows[row])}`;
         list.appendChild(item);
       }
     }
@@ -1264,6 +1597,8 @@
         pushLog(error || "Failed to load the generated PTX submission.", "stderr");
         return false;
       }
+
+      loadedProgramProblemId = getCurrentProblem().id;
 
       const entryCount = window.Module.ccall("ptxvm_get_entry_count", "number", [], []);
       const select = document.getElementById("kernel-select");
@@ -1338,8 +1673,18 @@
       }
     }
 
+    function ensureProgramMatchesCurrentProblem() {
+      const problem = getCurrentProblem();
+      if (loadedProgramProblemId !== problem.id) {
+        pushLog("This PTX was compiled for a different problem selection. Recompile before running the judge.", "stderr");
+        return false;
+      }
+
+      return true;
+    }
+
     function runVectorAdd() {
-      if (!ensureRuntime()) {
+      if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
         return;
       }
 
@@ -1384,7 +1729,7 @@
           output.push(window.Module.ccall("ptxvm_get_result_value", "number", ["number"], [i]));
         }
 
-        renderResults(inputA, inputB, output);
+        renderVectorResults(inputA, inputB, output);
         pushLog(`Judge finished running kernel ${kernelName}.`, "runtime");
       } finally {
         window.Module._free(inputAPtr);
@@ -1392,23 +1737,98 @@
       }
     }
 
+    function runMatrixMultiplication() {
+      if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
+        return;
+      }
+
+      const rowsM = parsePositiveInt(document.getElementById("matrix-m").value);
+      const sharedN = parsePositiveInt(document.getElementById("matrix-n").value);
+      const colsK = parsePositiveInt(document.getElementById("matrix-k").value);
+
+      if (rowsM === null || sharedN === null || colsK === null) {
+        pushLog("M, N, and K must all be positive integers.", "stderr");
+        return;
+      }
+
+      const inputA = parseFloatList(document.getElementById("input-a").value);
+      const inputB = parseFloatList(document.getElementById("input-b").value);
+
+      if (inputA.length !== rowsM * sharedN) {
+        pushLog("Matrix A length does not match M x N.", "stderr");
+        return;
+      }
+
+      if (inputB.length !== sharedN * colsK) {
+        pushLog("Matrix B length does not match N x K.", "stderr");
+        return;
+      }
+
+      const kernelName = document.getElementById("kernel-select").value;
+      const inputABytes = inputA.length * Float32Array.BYTES_PER_ELEMENT;
+      const inputBBytes = inputB.length * Float32Array.BYTES_PER_ELEMENT;
+      const inputAPtr = window.Module._malloc(inputABytes);
+      const inputBPtr = window.Module._malloc(inputBBytes);
+
+      try {
+        window.Module.HEAPF32.set(inputA, inputAPtr >> 2);
+        window.Module.HEAPF32.set(inputB, inputBPtr >> 2);
+
+        const ok = window.Module.ccall(
+          "ptxvm_run_matrix_multiplication",
+          "number",
+          ["string", "number", "number", "number", "number", "number", "number", "number"],
+          [kernelName, inputAPtr, inputA.length, inputBPtr, inputB.length, rowsM, sharedN, colsK]
+        );
+
+        if (!ok) {
+          const error = window.Module.ccall("ptxvm_get_last_error", "string", [], []);
+          pushLog(error || "Kernel execution failed.", "stderr");
+          return;
+        }
+
+        const resultCount = window.Module.ccall("ptxvm_get_result_count", "number", [], []);
+        const output = [];
+        for (let i = 0; i < resultCount; i += 1) {
+          output.push(window.Module.ccall("ptxvm_get_result_value", "number", ["number"], [i]));
+        }
+
+        renderMatrixResults(inputA, inputB, rowsM, sharedN, colsK, output);
+        pushLog(`Judge finished running kernel ${kernelName}.`, "runtime");
+      } finally {
+        window.Module._free(inputAPtr);
+        window.Module._free(inputBPtr);
+      }
+    }
+
+    function runSelectedProblem() {
+      const problem = getCurrentProblem();
+      if (problem.kind === "matrix-multiplication") {
+        runMatrixMultiplication();
+        return;
+      }
+
+      runVectorAdd();
+    }
+
     window.addEventListener("DOMContentLoaded", () => {
       renderProblemList();
       renderStatement();
       renderExamples();
+      renderExampleButtons();
+      renderTestcaseEditor();
       setupTabs();
-      useExample(currentExampleIndex);
+      useExample(currentExampleIndex, false);
       resetSourceEditor(false);
+      clearLoadedProgramState();
       setGeneratedPTX("");
 
       document.getElementById("cuda-file").addEventListener("change", handleCudaFileChange);
       document.getElementById("compile-button").addEventListener("click", compileCurrentSource);
       document.getElementById("source-reset-button").addEventListener("click", () => resetSourceEditor(true));
       document.getElementById("kernel-select").addEventListener("change", renderKernelMetadata);
-      document.getElementById("run-button").addEventListener("click", runVectorAdd);
+      document.getElementById("run-button").addEventListener("click", runSelectedProblem);
       document.getElementById("reset-button").addEventListener("click", () => useExample(0));
-      document.getElementById("example-1-button").addEventListener("click", () => useExample(0));
-      document.getElementById("example-2-button").addEventListener("click", () => useExample(1));
 
       renderEmptyState();
       ensureCompilerReady().catch((error) => {

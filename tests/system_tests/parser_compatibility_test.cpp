@@ -41,3 +41,40 @@ TEST(ParserCompatibilityTest, ParsesVisibleEntryWithHostSignature)
     EXPECT_EQ(entry.parameters[3].type, ".u32");
     EXPECT_FALSE(entry.parameters[3].isPointer);
 }
+
+TEST(ParserCompatibilityTest, ParsesSpecialRegistersAsDedicatedOperands)
+{
+    const std::string testPTX = R"(
+.version 8.0
+.target sm_89
+.address_size 64
+
+.entry solve(
+    .param .u64 out_ptr
+)
+{
+    .reg .u32 %r<4>;
+
+$BB0:
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.y;
+    mov.u32 %r3, %ntid.x;
+    ret;
+}
+)";
+
+    PTXParser parser;
+    ASSERT_TRUE(parser.parseString(testPTX)) << parser.getErrorMessage();
+
+    const auto& instructions = parser.getInstructions();
+    ASSERT_GE(instructions.size(), 3u);
+
+    EXPECT_EQ(instructions[0].sources[0].type, OperandType::SPECIAL);
+    EXPECT_EQ(instructions[0].sources[0].labelName, "%tid.x");
+
+    EXPECT_EQ(instructions[1].sources[0].type, OperandType::SPECIAL);
+    EXPECT_EQ(instructions[1].sources[0].labelName, "%ctaid.y");
+
+    EXPECT_EQ(instructions[2].sources[0].type, OperandType::SPECIAL);
+    EXPECT_EQ(instructions[2].sources[0].labelName, "%ntid.x");
+}

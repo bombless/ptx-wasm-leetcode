@@ -96,6 +96,23 @@ private:
     std::unordered_map<size_t, CFGNode*> m_pcToNode;
 };
 
+struct ThreadExecutionContext {
+    unsigned int gridDimX = 1;
+    unsigned int gridDimY = 1;
+    unsigned int gridDimZ = 1;
+    unsigned int blockDimX = 1;
+    unsigned int blockDimY = 1;
+    unsigned int blockDimZ = 1;
+    unsigned int blockIdxX = 0;
+    unsigned int blockIdxY = 0;
+    unsigned int blockIdxZ = 0;
+    unsigned int threadIdxX = 0;
+    unsigned int threadIdxY = 0;
+    unsigned int threadIdxZ = 0;
+    unsigned int warpSize = 32;
+    unsigned int laneId = 0;
+};
+
 class PTXExecutor {
 public:
     // Constructor/destructor
@@ -173,6 +190,11 @@ public:
     // Get current grid/block configuration
     void getGridDimensions(unsigned int& gridDimX, unsigned int& gridDimY, unsigned int& gridDimZ,
                           unsigned int& blockDimX, unsigned int& blockDimY, unsigned int& blockDimZ) const;
+
+    // Override SIMT execution and replay the kernel as one explicit virtual thread.
+    void setSingleThreadExecutionContext(const ThreadExecutionContext& context);
+    void clearSingleThreadExecutionContext();
+    bool hasSingleThreadExecutionContext() const;
 
 private:
     // Private implementation details
