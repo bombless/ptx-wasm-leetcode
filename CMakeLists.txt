@@ -83,23 +83,32 @@ endif()
 if(EMSCRIPTEN)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     find_program(EMCC_EXECUTABLE NAMES emcc REQUIRED)
+    set(BARRACUDA_ROOT "${CMAKE_SOURCE_DIR}/third_party/BarraCUDA")
+
+    if(NOT EXISTS "${BARRACUDA_ROOT}/src/nvidia/emit.c")
+        message(FATAL_ERROR
+            "BarraCUDA sources were not found at ${BARRACUDA_ROOT}. "
+            "Initialize git submodules before configuring the web build: "
+            "'git submodule update --init --recursive'."
+        )
+    endif()
 
     set(BARRACUDA_WEB_OUTPUT_DIR "${CMAKE_BINARY_DIR}/webapp")
     set(BARRACUDA_WEB_JS "${BARRACUDA_WEB_OUTPUT_DIR}/barracuda.js")
     set(BARRACUDA_WEB_SOURCES
         ${CMAKE_SOURCE_DIR}/web/barracuda_web_bridge.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/fe/bc_err.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/fe/preproc.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/fe/lexer.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/fe/parser.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/fe/sema.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/ir/bir.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/ir/bir_lower.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/ir/bir_mem2reg.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/ir/bir_cfold.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/ir/bir_dce.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/nvidia/isel.c
-        ${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/nvidia/emit.c
+        ${BARRACUDA_ROOT}/src/fe/bc_err.c
+        ${BARRACUDA_ROOT}/src/fe/preproc.c
+        ${BARRACUDA_ROOT}/src/fe/lexer.c
+        ${BARRACUDA_ROOT}/src/fe/parser.c
+        ${BARRACUDA_ROOT}/src/fe/sema.c
+        ${BARRACUDA_ROOT}/src/ir/bir.c
+        ${BARRACUDA_ROOT}/src/ir/bir_lower.c
+        ${BARRACUDA_ROOT}/src/ir/bir_mem2reg.c
+        ${BARRACUDA_ROOT}/src/ir/bir_cfold.c
+        ${BARRACUDA_ROOT}/src/ir/bir_dce.c
+        ${BARRACUDA_ROOT}/src/nvidia/isel.c
+        ${BARRACUDA_ROOT}/src/nvidia/emit.c
     )
 
     add_custom_command(
@@ -110,10 +119,10 @@ if(EMSCRIPTEN)
             ${EMCC_EXECUTABLE}
             -std=c99
             -O2
-            -I${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src
-            -I${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/fe
-            -I${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/ir
-            -I${CMAKE_SOURCE_DIR}/third_party/BarraCUDA/src/nvidia
+            -I${BARRACUDA_ROOT}/src
+            -I${BARRACUDA_ROOT}/src/fe
+            -I${BARRACUDA_ROOT}/src/ir
+            -I${BARRACUDA_ROOT}/src/nvidia
             ${BARRACUDA_WEB_SOURCES}
             -sALLOW_MEMORY_GROWTH=1
             -sFORCE_FILESYSTEM=1
