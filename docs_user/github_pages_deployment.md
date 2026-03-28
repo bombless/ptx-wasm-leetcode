@@ -10,6 +10,10 @@ that builds the wasm web app and publishes it to GitHub Pages.
 3. Go to `Settings` -> `Pages`.
 4. Under `Build and deployment`, set `Source` to `GitHub Actions`.
 
+If the workflow was pushed before Pages was enabled, the first `Deploy GitHub Pages`
+run may fail during `actions/configure-pages`. After enabling Pages, rerun the failed
+workflow from the `Actions` tab or push another commit to `master`.
+
 ## Publish flow
 
 After Pages is configured, every push to the `master` branch will:
