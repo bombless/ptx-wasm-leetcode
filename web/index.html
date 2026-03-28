@@ -3,38 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PTX VM Browser Runner</title>
+  <title>PTX Judge Arena</title>
   <link rel="icon" href="data:," />
   <style>
     :root {
-      --bg: #f5efe5;
-      --bg-alt: #fffaf1;
-      --panel: rgba(255, 251, 244, 0.88);
-      --panel-strong: rgba(255, 255, 255, 0.96);
-      --text: #1d2430;
-      --muted: #5e6673;
-      --accent: #0f7c78;
-      --accent-strong: #0a5d63;
-      --warm: #d56f3e;
-      --border: rgba(29, 36, 48, 0.12);
-      --shadow: 0 20px 60px rgba(20, 26, 38, 0.10);
+      --bg: #0d1117;
+      --bg-soft: #11161e;
+      --panel: #161c25;
+      --panel-alt: #1b2430;
+      --panel-glow: rgba(88, 166, 255, 0.08);
+      --border: rgba(240, 246, 252, 0.08);
+      --border-strong: rgba(240, 246, 252, 0.14);
+      --text: #e6edf3;
+      --muted: #9da7b3;
+      --accent: #58a6ff;
+      --accent-strong: #2f81f7;
+      --good: #3fb950;
+      --warn: #d29922;
+      --danger: #ff7b72;
       --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-      --sans: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+      --sans: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      --shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+      --radius: 18px;
     }
 
     * {
       box-sizing: border-box;
     }
 
+    html,
     body {
       margin: 0;
-      min-height: 100vh;
-      font-family: var(--sans);
-      color: var(--text);
+      min-height: 100%;
       background:
-        radial-gradient(circle at top left, rgba(15, 124, 120, 0.14), transparent 28%),
-        radial-gradient(circle at bottom right, rgba(213, 111, 62, 0.16), transparent 26%),
-        linear-gradient(180deg, var(--bg-alt), var(--bg));
+        radial-gradient(circle at top left, rgba(47, 129, 247, 0.12), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(63, 185, 80, 0.08), transparent 22%),
+        linear-gradient(180deg, #0b0f14, var(--bg));
+      color: var(--text);
+      font-family: var(--sans);
     }
 
     body::before {
@@ -43,211 +49,456 @@
       inset: 0;
       pointer-events: none;
       background-image:
-        linear-gradient(rgba(29, 36, 48, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(29, 36, 48, 0.03) 1px, transparent 1px);
-      background-size: 28px 28px;
-      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85), transparent 90%);
+        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      background-size: 26px 26px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.75), transparent);
     }
 
-    main {
-      width: min(1180px, calc(100vw - 32px));
-      margin: 0 auto;
-      padding: 36px 0 48px;
-      position: relative;
-      z-index: 1;
-    }
-
-    .hero {
-      display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
-      gap: 20px;
-      margin-bottom: 22px;
-    }
-
-    .hero-card,
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
-    }
-
-    .hero-card {
-      padding: 28px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .hero-card::after {
-      content: "";
-      position: absolute;
-      inset: auto -10% -45% auto;
-      width: 240px;
-      height: 240px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(15, 124, 120, 0.22), transparent 68%);
-      pointer-events: none;
-    }
-
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(15, 124, 120, 0.10);
-      color: var(--accent-strong);
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    h1 {
-      margin: 18px 0 10px;
-      font-size: clamp(2rem, 3vw, 3.4rem);
-      line-height: 0.98;
-      letter-spacing: -0.04em;
-    }
-
-    .hero p {
-      margin: 0;
-      max-width: 62ch;
-      color: var(--muted);
-      font-size: 1rem;
-      line-height: 1.65;
-    }
-
-    .status-card {
-      padding: 24px;
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
       display: flex;
-      flex-direction: column;
       justify-content: space-between;
-      gap: 18px;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 24px;
+      background: rgba(10, 14, 21, 0.88);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
     }
 
-    .status-chip {
-      display: inline-flex;
+    .brand {
+      display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, var(--accent), #7ee787);
+      color: #0d1117;
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      box-shadow: 0 10px 24px rgba(47, 129, 247, 0.24);
+    }
+
+    .brand-copy small,
+    .topbar-status small {
+      display: block;
+      color: var(--muted);
+      font-size: 0.76rem;
+      margin-bottom: 2px;
+    }
+
+    .brand-copy strong,
+    .topbar-status strong {
+      font-size: 0.98rem;
+    }
+
+    .topbar-status {
+      display: flex;
+      align-items: center;
+      gap: 12px;
       padding: 10px 14px;
-      border-radius: 14px;
-      background: rgba(29, 36, 48, 0.05);
-      font-weight: 700;
-      width: fit-content;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
     }
 
     .status-dot {
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: var(--warm);
-      box-shadow: 0 0 0 6px rgba(213, 111, 62, 0.16);
+      background: var(--warn);
+      box-shadow: 0 0 0 6px rgba(210, 153, 34, 0.15);
+      flex: 0 0 auto;
     }
 
-    .status-chip.ready .status-dot {
-      background: var(--accent);
-      box-shadow: 0 0 0 6px rgba(15, 124, 120, 0.16);
+    .topbar-status.ready .status-dot {
+      background: var(--good);
+      box-shadow: 0 0 0 6px rgba(63, 185, 80, 0.12);
     }
 
-    .grid {
+    .app-shell {
+      width: min(1440px, calc(100vw - 28px));
+      margin: 22px auto 28px;
       display: grid;
-      grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
-      gap: 20px;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 18px;
+      position: relative;
+      z-index: 1;
     }
 
-    .panel {
-      padding: 22px;
+    .rail {
+      display: grid;
+      gap: 18px;
+      align-content: start;
     }
 
-    .panel h2 {
-      margin: 0 0 6px;
+    .card {
+      background: linear-gradient(180deg, rgba(27, 36, 48, 0.96), rgba(17, 22, 30, 0.96));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-body {
+      padding: 18px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(88, 166, 255, 0.12);
+      color: #a5d6ff;
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .rail h2 {
+      margin: 14px 0 8px;
       font-size: 1.15rem;
+      letter-spacing: -0.03em;
+    }
+
+    .muted {
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 0.92rem;
+    }
+
+    .problem-list {
+      list-style: none;
+      padding: 0;
+      margin: 16px 0 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    .problem-row {
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid var(--border-strong);
+      background:
+        linear-gradient(180deg, rgba(88, 166, 255, 0.12), rgba(88, 166, 255, 0.04)),
+        rgba(255, 255, 255, 0.02);
+    }
+
+    .problem-row small {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-family: var(--mono);
+    }
+
+    .problem-row strong {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 0.98rem;
+      line-height: 1.4;
+    }
+
+    .badge-row,
+    .mini-row,
+    .summary-row,
+    .quick-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .badge,
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+
+    .badge.good,
+    .pill.good {
+      background: rgba(63, 185, 80, 0.14);
+      color: #7ee787;
+    }
+
+    .badge.warn,
+    .pill.warn {
+      background: rgba(210, 153, 34, 0.16);
+      color: #f2cc60;
+    }
+
+    .badge.accent {
+      background: rgba(88, 166, 255, 0.14);
+      color: #a5d6ff;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.03fr) minmax(360px, 0.97fr);
+      gap: 18px;
+      min-height: calc(100vh - 132px);
+    }
+
+    .problem-pane,
+    .judge-pane {
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    .problem-header {
+      padding: 22px 24px 18px;
+    }
+
+    .problem-headline {
+      display: flex;
+      gap: 18px;
+      align-items: flex-start;
+    }
+
+    .problem-index {
+      width: 58px;
+      height: 58px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, rgba(88, 166, 255, 0.18), rgba(88, 166, 255, 0.05));
+      border: 1px solid rgba(88, 166, 255, 0.18);
+      color: #a5d6ff;
+      font-family: var(--mono);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      flex: 0 0 auto;
+    }
+
+    .problem-headline h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.7rem, 2vw, 2.4rem);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .tabbar {
+      display: flex;
+      gap: 8px;
+      padding: 0 24px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .tab {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 14px 12px;
+      margin-top: -1px;
+      border-top: 2px solid transparent;
+      font-weight: 700;
+      cursor: pointer;
+      transition: color 140ms ease, border-color 140ms ease;
+    }
+
+    .tab.active {
+      color: var(--text);
+      border-top-color: var(--accent);
+    }
+
+    .tabpanels {
+      padding: 18px 24px 24px;
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .content-block + .content-block {
+      margin-top: 22px;
+    }
+
+    .content-block h3 {
+      margin: 0 0 10px;
+      font-size: 1rem;
       letter-spacing: -0.02em;
     }
 
-    .panel .subtle {
-      margin: 0 0 18px;
-      color: var(--muted);
-      line-height: 1.55;
+    .content-block p {
+      margin: 0;
+      color: var(--text);
+      line-height: 1.72;
+    }
+
+    .bullet-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    .bullet-list li + li {
+      margin-top: 8px;
+    }
+
+    .example-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .example-card,
+    .starter-card,
+    .judge-card {
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .example-card header,
+    .starter-card header,
+    .judge-card header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .example-card header strong,
+    .starter-card header strong,
+    .judge-card header strong {
       font-size: 0.95rem;
     }
 
-    .stack {
-      display: grid;
-      gap: 18px;
+    .example-body,
+    .starter-body,
+    .judge-body {
+      padding: 16px;
     }
 
-    .field {
+    .vector-line,
+    .code-view,
+    .result-vector,
+    .meta-list,
+    textarea,
+    select,
+    input[type="file"] {
+      font-family: var(--mono);
+    }
+
+    .vector-line {
+      display: block;
+      color: #d2d8df;
+      line-height: 1.75;
+      word-break: break-word;
+    }
+
+    .code-view {
+      margin: 0;
+      padding: 18px;
+      border-radius: 16px;
+      background: #0f141b;
+      color: #dbe8f8;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      line-height: 1.65;
+      overflow: auto;
+    }
+
+    .judge-card h2 {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: -0.02em;
+    }
+
+    .judge-subtle {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 0.9rem;
+    }
+
+    .field-grid {
       display: grid;
-      gap: 8px;
+      gap: 14px;
     }
 
     .field label,
     .label {
-      font-size: 0.9rem;
+      display: block;
+      margin-bottom: 8px;
+      color: #dce4ee;
+      font-size: 0.88rem;
       font-weight: 700;
-      color: var(--text);
     }
 
-    input[type="file"],
-    select,
-    textarea,
-    button {
-      font: inherit;
-    }
-
-    select,
-    textarea,
-    .meta-box {
+    .field input[type="file"],
+    .field select,
+    .field textarea {
       width: 100%;
-      border: 1px solid rgba(29, 36, 48, 0.12);
-      border-radius: 16px;
-      background: var(--panel-strong);
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      background: #0f141b;
       color: var(--text);
-    }
-
-    select,
-    textarea {
-      padding: 14px 16px;
-      transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
-    }
-
-    textarea {
-      min-height: 110px;
-      resize: vertical;
-      line-height: 1.55;
-    }
-
-    select:focus,
-    textarea:focus {
+      padding: 14px 15px;
       outline: none;
-      border-color: rgba(15, 124, 120, 0.45);
-      box-shadow: 0 0 0 4px rgba(15, 124, 120, 0.10);
+      transition: border-color 140ms ease, box-shadow 140ms ease;
     }
 
-    input[type="file"] {
-      width: 100%;
-      padding: 14px 16px;
-      border: 1px dashed rgba(15, 124, 120, 0.36);
-      border-radius: 18px;
-      background: rgba(15, 124, 120, 0.05);
+    .field textarea {
+      min-height: 108px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    .field input[type="file"]:focus,
+    .field select:focus,
+    .field textarea:focus {
+      border-color: rgba(88, 166, 255, 0.55);
+      box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.10);
+    }
+
+    .field input[type="file"] {
+      border-style: dashed;
+      background:
+        linear-gradient(180deg, rgba(88, 166, 255, 0.08), rgba(88, 166, 255, 0.03)),
+        #0f141b;
     }
 
     .button-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
+      gap: 10px;
     }
 
     button {
       border: none;
-      border-radius: 16px;
-      padding: 14px 18px;
+      border-radius: 14px;
+      padding: 12px 15px;
+      font: inherit;
       font-weight: 800;
-      letter-spacing: 0.01em;
       cursor: pointer;
       transition: transform 140ms ease, opacity 140ms ease, box-shadow 140ms ease;
     }
@@ -265,25 +516,28 @@
     .primary {
       background: linear-gradient(135deg, var(--accent), var(--accent-strong));
       color: white;
-      box-shadow: 0 12px 24px rgba(15, 124, 120, 0.18);
+      box-shadow: 0 12px 26px rgba(47, 129, 247, 0.22);
     }
 
-    .ghost {
-      background: rgba(29, 36, 48, 0.06);
+    .secondary {
+      background: rgba(255, 255, 255, 0.08);
       color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.06);
     }
 
-    .meta-box {
-      padding: 16px;
-      min-height: 140px;
+    .chip-button {
+      padding: 10px 12px;
+      background: rgba(88, 166, 255, 0.10);
+      color: #a5d6ff;
+      border: 1px solid rgba(88, 166, 255, 0.14);
     }
 
     .meta-list,
     .result-list,
     .log-list {
+      list-style: none;
       margin: 0;
       padding: 0;
-      list-style: none;
       display: grid;
       gap: 10px;
     }
@@ -291,213 +545,397 @@
     .meta-item,
     .result-item,
     .log-item {
-      border-radius: 14px;
       padding: 12px 14px;
-      background: rgba(29, 36, 48, 0.04);
-      border: 1px solid rgba(29, 36, 48, 0.08);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .meta-item strong,
     .result-item strong {
       display: block;
       margin-bottom: 4px;
+      color: #f0f6fc;
     }
 
-    .code,
-    code {
-      font-family: var(--mono);
-    }
-
-    .hint-grid {
-      display: grid;
-      gap: 12px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .hint-card {
-      padding: 14px;
+    .result-vector {
+      padding: 16px;
       border-radius: 16px;
-      background: rgba(255, 255, 255, 0.72);
-      border: 1px solid rgba(29, 36, 48, 0.08);
-    }
-
-    .hint-card strong {
-      display: block;
-      margin-bottom: 6px;
-    }
-
-    .result-summary {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-
-    .pill {
-      padding: 10px 12px;
-      border-radius: 999px;
-      background: rgba(29, 36, 48, 0.06);
-      font-size: 0.9rem;
-      font-weight: 700;
-    }
-
-    .pill.good {
-      background: rgba(15, 124, 120, 0.12);
-      color: var(--accent-strong);
-    }
-
-    .pill.warn {
-      background: rgba(213, 111, 62, 0.12);
-      color: #7a3c1b;
+      background: #0f141b;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: #dbe8f8;
+      line-height: 1.7;
+      word-break: break-word;
+      min-height: 88px;
     }
 
     .log-shell {
-      min-height: 260px;
-      max-height: 420px;
+      background: #0b1016;
+      border-top: 1px solid var(--border);
+      max-height: 300px;
       overflow: auto;
-      padding: 0;
-      background: #16202d;
-      border-radius: 18px;
-      border: 1px solid rgba(15, 124, 120, 0.15);
-      color: #d8e6f0;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     }
 
     .log-list {
-      padding: 14px;
+      padding: 16px;
     }
 
     .log-item {
-      background: rgba(255, 255, 255, 0.04);
-      border-color: rgba(255, 255, 255, 0.04);
       font-family: var(--mono);
-      font-size: 0.86rem;
-      line-height: 1.45;
+      font-size: 0.83rem;
+      color: #dbe8f8;
+      line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-word;
     }
 
     .log-item.stderr {
-      color: #ffd5c2;
-      border-color: rgba(213, 111, 62, 0.18);
+      color: #ffb4ad;
+      border-color: rgba(255, 123, 114, 0.12);
     }
 
     .log-item.runtime {
-      color: #c3f3ef;
-      border-color: rgba(15, 124, 120, 0.22);
+      color: #c0e7ff;
+      border-color: rgba(88, 166, 255, 0.10);
     }
 
-    @media (max-width: 920px) {
-      .hero,
-      .grid {
+    .hint-box {
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(88, 166, 255, 0.06);
+      border: 1px solid rgba(88, 166, 255, 0.10);
+      color: #d5e9ff;
+      line-height: 1.6;
+    }
+
+    .hint-box strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    @media (max-width: 1180px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .app-shell {
         grid-template-columns: 1fr;
       }
 
-      .hint-grid {
+      .rail {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      .topbar {
+        padding: 14px 16px;
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .app-shell {
+        width: min(100vw - 16px, 1440px);
+      }
+
+      .rail {
         grid-template-columns: 1fr;
+      }
+
+      .problem-headline {
+        flex-direction: column;
+      }
+
+      .tabbar {
+        overflow: auto;
       }
     }
   </style>
 </head>
 <body>
-  <main>
-    <section class="hero">
-      <article class="hero-card">
-        <div class="eyebrow">PTX in Browser</div>
-        <h1>上传 PTX，直接在浏览器里跑一遍 `vector_add`</h1>
-        <p>
-          这个页面把仓库里的 PTX VM 编成了 wasm。你可以选择本地的 <span class="code">t.ptx</span>，
-          页面会读取 entry kernel、展示参数签名，并用两组 float 数组去运行一个
-          <span class="code">vector_add</span> 风格的 demo。
-        </p>
-      </article>
-
-      <aside class="hero-card status-card">
-        <div>
-          <div id="runtime-chip" class="status-chip">
-            <span class="status-dot"></span>
-            <span id="runtime-text">WASM 运行时加载中</span>
-          </div>
-        </div>
-        <div class="hint-grid">
-          <div class="hint-card">
-            <strong>怎么试</strong>
-            先点“选择 PTX 文件”，挑选仓库里的 <span class="code">t.ptx</span>。
-          </div>
-          <div class="hint-card">
-            <strong>当前支持</strong>
-            这版网页专门对齐了 <span class="code">(.u64, .u64, .u64, .u32)</span> 的向量加法签名。
-          </div>
-        </div>
-      </aside>
-    </section>
-
-    <section class="grid">
-      <div class="stack">
-        <section class="panel">
-          <h2>1. 载入 PTX</h2>
-          <p class="subtle">文件内容会写进 wasm 的虚拟文件系统，然后由 PTX VM 直接读取。</p>
-          <div class="stack">
-            <div class="field">
-              <label for="ptx-file">PTX 文件</label>
-              <input id="ptx-file" type="file" accept=".ptx,.txt" />
-            </div>
-            <div class="field">
-              <label for="kernel-select">检测到的 entry kernel</label>
-              <select id="kernel-select" disabled></select>
-            </div>
-            <div class="meta-box">
-              <div class="label" style="margin-bottom: 10px;">参数签名</div>
-              <ul id="kernel-meta" class="meta-list"></ul>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h2>2. 准备输入</h2>
-          <p class="subtle">
-            这里默认填了一组 8 元素的 float 数组，对应你放进仓库里的 <span class="code">t.ptx</span> 测试用例。
-          </p>
-          <div class="stack">
-            <div class="field">
-              <label for="input-a">Input A</label>
-              <textarea id="input-a">1, 2, 3, 4, 5, 6, 7, 8</textarea>
-            </div>
-            <div class="field">
-              <label for="input-b">Input B</label>
-              <textarea id="input-b">10, 20, 30, 40, 50, 60, 70, 80</textarea>
-            </div>
-            <div class="button-row">
-              <button id="run-button" class="primary" disabled>运行 vector_add Demo</button>
-              <button id="reset-button" class="ghost">恢复默认输入</button>
-            </div>
-          </div>
-        </section>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">PTX</div>
+      <div class="brand-copy">
+        <small>GPU Problem Runner</small>
+        <strong>PTX Judge Arena</strong>
       </div>
+    </div>
+    <div id="runtime-chip" class="topbar-status">
+      <span class="status-dot"></span>
+      <div class="topbar-status-copy">
+        <small>Runtime</small>
+        <strong id="runtime-text">WASM judge loading</strong>
+      </div>
+    </div>
+  </header>
 
-      <div class="stack">
-        <section class="panel">
-          <h2>3. 结果</h2>
-          <p class="subtle">页面会把输出缓冲区读回 JS，并和前端计算出的期望结果做一次对比。</p>
-          <div id="result-summary" class="result-summary"></div>
-          <div class="meta-box">
-            <ul id="result-list" class="result-list"></ul>
+  <div class="app-shell">
+    <aside class="rail">
+      <section class="card">
+        <div class="card-body">
+          <div class="eyebrow">Problem Set</div>
+          <h2>GPU Warmup Track</h2>
+          <p class="muted">
+            这个页面是一个 PTX 版的题目练习场。左边看题，右边上传你编译好的 PTX，然后直接在浏览器里跑 judge。
+          </p>
+          <ul id="problem-list" class="problem-list"></ul>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-body">
+          <div class="eyebrow">Submission Flow</div>
+          <h2>Compile, Upload, Run</h2>
+          <div class="mini-row" style="margin: 14px 0 0;">
+            <span class="badge accent">CUDA/PTX</span>
+            <span class="badge warn">No External Libs</span>
           </div>
-        </section>
+          <div class="hint-box" style="margin-top: 14px;">
+            <strong>Judge Contract</strong>
+            上传的 kernel 需要是三个 pointer 加一个 <span style="font-family: var(--mono);">.u32 N</span> 的向量加法签名。
+            这版页面会把结果当作 <span style="font-family: var(--mono);">vector C</span> 来校验。
+          </div>
+        </div>
+      </section>
+    </aside>
 
-        <section class="panel">
-          <h2>运行日志</h2>
-          <p class="subtle">这里会看到 wasm runtime、PTX VM 和页面本身的状态信息。</p>
+    <div class="workspace">
+      <section class="problem-pane">
+        <article class="card">
+          <div class="problem-header">
+            <div class="problem-headline">
+              <div class="problem-index" id="problem-id">001</div>
+              <div>
+                <h1 id="problem-title">Element-Wise Vector Add</h1>
+                <div class="badge-row">
+                  <span class="badge good" id="problem-difficulty">Easy</span>
+                  <span class="badge accent">GPU</span>
+                  <span class="badge accent">PTX</span>
+                  <span class="badge accent">Float32</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tabbar">
+            <button class="tab active" data-tab="statement">Description</button>
+            <button class="tab" data-tab="examples">Examples</button>
+            <button class="tab" data-tab="starter">Starter Code</button>
+          </div>
+
+          <div class="tabpanels">
+            <section class="tab-panel active" data-panel="statement">
+              <div class="content-block">
+                <h3>Problem Statement</h3>
+                <p id="problem-statement"></p>
+              </div>
+
+              <div class="content-block">
+                <h3>Implementation Requirements</h3>
+                <ul id="requirements-list" class="bullet-list"></ul>
+              </div>
+
+              <div class="content-block">
+                <h3>Constraints</h3>
+                <ul id="constraints-list" class="bullet-list"></ul>
+              </div>
+
+              <div class="content-block">
+                <h3>Performance Note</h3>
+                <div class="hint-box">
+                  Judge data is lightweight in-browser, but the original challenge measures performance at
+                  <span style="font-family: var(--mono);">N = 25,000,000</span>.
+                  Keep your kernel launch and memory access pattern GPU-friendly.
+                </div>
+              </div>
+            </section>
+
+            <section class="tab-panel" data-panel="examples">
+              <div id="example-grid" class="example-grid"></div>
+            </section>
+
+            <section class="tab-panel" data-panel="starter">
+              <article class="starter-card">
+                <header>
+                  <strong>Starter Signature</strong>
+                  <span class="badge accent">Do not change the signature</span>
+                </header>
+                <div class="starter-body">
+                  <pre id="starter-code" class="code-view"></pre>
+                </div>
+              </article>
+
+              <article class="starter-card" style="margin-top: 14px;">
+                <header>
+                  <strong>Submission Hint</strong>
+                  <span class="badge warn">Upload PTX</span>
+                </header>
+                <div class="starter-body">
+                  <div class="hint-box">
+                    Write your CUDA kernel with the required signature, compile it to PTX, then upload the generated
+                    <span style="font-family: var(--mono);">.ptx</span> file on the right side. The browser judge will detect your entry
+                    function and run it against the selected sample input.
+                  </div>
+                </div>
+              </article>
+            </section>
+          </div>
+        </article>
+      </section>
+
+      <section class="judge-pane">
+        <article class="card judge-card">
+          <header>
+            <div>
+              <h2>Submit PTX</h2>
+              <p class="judge-subtle">Upload the PTX for your solution, then choose the detected entry kernel.</p>
+            </div>
+            <span class="badge accent">Browser Judge</span>
+          </header>
+          <div class="judge-body">
+            <div class="field-grid">
+              <div class="field">
+                <label for="ptx-file">PTX file</label>
+                <input id="ptx-file" type="file" accept=".ptx,.txt" />
+              </div>
+
+              <div class="field">
+                <label for="kernel-select">Detected entry kernel</label>
+                <select id="kernel-select" disabled></select>
+              </div>
+
+              <div class="field">
+                <div class="label">Kernel signature</div>
+                <ul id="kernel-meta" class="meta-list"></ul>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card judge-card">
+          <header>
+            <div>
+              <h2>Custom Testcase</h2>
+              <p class="judge-subtle">Use the official examples or paste your own float arrays.</p>
+            </div>
+            <div class="quick-actions">
+              <button id="example-1-button" class="chip-button" type="button">Use Example 1</button>
+              <button id="example-2-button" class="chip-button" type="button">Use Example 2</button>
+            </div>
+          </header>
+          <div class="judge-body">
+            <div class="field-grid">
+              <div class="field">
+                <label for="input-a">Vector A</label>
+                <textarea id="input-a"></textarea>
+              </div>
+
+              <div class="field">
+                <label for="input-b">Vector B</label>
+                <textarea id="input-b"></textarea>
+              </div>
+
+              <div class="button-row">
+                <button id="run-button" class="primary" type="button" disabled>Run Judge</button>
+                <button id="reset-button" class="secondary" type="button">Reset to Example 1</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card judge-card">
+          <header>
+            <div>
+              <h2>Output Vector C</h2>
+              <p class="judge-subtle">The final result must be stored in vector C. The judge compares it to a CPU reference.</p>
+            </div>
+          </header>
+          <div class="judge-body">
+            <div id="result-summary" class="summary-row"></div>
+            <div id="result-vector" class="result-vector">C = [ waiting for a run ]</div>
+            <ul id="result-list" class="result-list" style="margin-top: 14px;"></ul>
+          </div>
+        </article>
+
+        <article class="card judge-card">
+          <header>
+            <div>
+              <h2>Judge Console</h2>
+              <p class="judge-subtle">Runtime messages from the wasm VM and the page itself.</p>
+            </div>
+          </header>
           <div class="log-shell">
             <ul id="log-list" class="log-list"></ul>
           </div>
-        </section>
-      </div>
-    </section>
-  </main>
+        </article>
+      </section>
+    </div>
+  </div>
 
   <script>
+    const PROBLEM = {
+      id: "001",
+      title: "Element-Wise Vector Add",
+      difficulty: "Easy",
+      statement:
+        "Write a GPU program that performs element-wise addition of two vectors containing 32-bit floating point numbers. The program should take two input vectors of equal length and produce a single output vector containing their sum.",
+      requirements: [
+        "External libraries are not permitted.",
+        "The solve function signature must remain unchanged.",
+        "The final result must be stored in vector C."
+      ],
+      constraints: [
+        "Input vectors A and B have identical lengths.",
+        "1 <= N <= 100,000,000.",
+        "Performance is measured with N = 25,000,000."
+      ],
+      examples: [
+        {
+          label: "Example 1",
+          a: [1.0, 2.0, 3.0, 4.0],
+          b: [5.0, 6.0, 7.0, 8.0],
+          c: [6.0, 8.0, 10.0, 12.0]
+        },
+        {
+          label: "Example 2",
+          a: [1.5, 1.5, 1.5],
+          b: [2.3, 2.3, 2.3],
+          c: [3.8, 3.8, 3.8]
+        }
+      ],
+      starterCode: [
+        "extern \"C\" __global__",
+        "void solve(const float* A, const float* B, float* C, int N) {",
+        "    int idx = blockIdx.x * blockDim.x + threadIdx.x;",
+        "",
+        "    if (idx >= N) {",
+        "        return;",
+        "    }",
+        "",
+        "    // TODO: write the result into C[idx]",
+        "    // C[idx] = ...",
+        "}"
+      ].join("\n")
+    };
+
     const logQueue = [];
+    let currentExampleIndex = 0;
+
+    function formatNumber(value) {
+      if (!Number.isFinite(value)) {
+        return String(value);
+      }
+
+      const rounded = Number.parseFloat(value.toFixed(6));
+      return Number.isInteger(rounded) ? rounded.toFixed(1) : String(rounded);
+    }
+
+    function formatVector(values) {
+      return `[${values.map((value) => formatNumber(value)).join(", ")}]`;
+    }
 
     function pushLog(message, kind = "runtime") {
       const text = String(message ?? "").trim();
@@ -506,7 +944,7 @@
       }
 
       logQueue.push({ text, kind });
-      if (logQueue.length > 120) {
+      if (logQueue.length > 140) {
         logQueue.shift();
       }
 
@@ -531,7 +969,7 @@
       printErr: (text) => pushLog(text, "stderr"),
       onRuntimeInitialized() {
         setRuntimeReady(true);
-        pushLog("WASM runtime ready. 现在可以上传 t.ptx 了。", "runtime");
+        pushLog("WASM judge ready. Upload a PTX solution to start testing.", "runtime");
         renderEmptyState();
       }
     };
@@ -544,20 +982,15 @@
       }
 
       chip.classList.toggle("ready", ready);
-      text.textContent = ready ? "WASM 运行时已就绪" : "WASM 运行时加载中";
+      text.textContent = ready ? "WASM judge is ready" : "WASM judge loading";
     }
 
     function ensureRuntime() {
       if (!window.Module.calledRun) {
-        pushLog("WASM 仍在加载，请稍等片刻。", "stderr");
+        pushLog("WASM runtime is still loading. Please wait a moment.", "stderr");
         return false;
       }
       return true;
-    }
-
-    function resetInputs() {
-      document.getElementById("input-a").value = "1, 2, 3, 4, 5, 6, 7, 8";
-      document.getElementById("input-b").value = "10, 20, 30, 40, 50, 60, 70, 80";
     }
 
     function parseFloatList(text) {
@@ -567,6 +1000,97 @@
         .filter(Boolean)
         .map((value) => Number.parseFloat(value))
         .filter((value) => Number.isFinite(value));
+    }
+
+    function useExample(index) {
+      const example = PROBLEM.examples[index];
+      currentExampleIndex = index;
+      document.getElementById("input-a").value = example.a.join(", ");
+      document.getElementById("input-b").value = example.b.join(", ");
+      pushLog(`Loaded ${example.label} into the testcase editor.`, "runtime");
+      renderEmptyState();
+    }
+
+    function renderProblemList() {
+      const list = document.getElementById("problem-list");
+      list.innerHTML = "";
+
+      const item = document.createElement("li");
+      item.className = "problem-row";
+      item.innerHTML = `
+        <small>Problem ${PROBLEM.id}</small>
+        <strong>${PROBLEM.title}</strong>
+        <div class="badge-row">
+          <span class="badge good">${PROBLEM.difficulty}</span>
+          <span class="badge accent">First Challenge</span>
+        </div>
+      `;
+      list.appendChild(item);
+    }
+
+    function renderStatement() {
+      document.getElementById("problem-id").textContent = PROBLEM.id;
+      document.getElementById("problem-title").textContent = PROBLEM.title;
+      document.getElementById("problem-difficulty").textContent = PROBLEM.difficulty;
+      document.getElementById("problem-statement").textContent = PROBLEM.statement;
+
+      const requirementsList = document.getElementById("requirements-list");
+      requirementsList.innerHTML = "";
+      for (const requirement of PROBLEM.requirements) {
+        const item = document.createElement("li");
+        item.textContent = requirement;
+        requirementsList.appendChild(item);
+      }
+
+      const constraintsList = document.getElementById("constraints-list");
+      constraintsList.innerHTML = "";
+      for (const constraint of PROBLEM.constraints) {
+        const item = document.createElement("li");
+        item.textContent = constraint;
+        constraintsList.appendChild(item);
+      }
+
+      document.getElementById("starter-code").textContent = PROBLEM.starterCode;
+    }
+
+    function renderExamples() {
+      const grid = document.getElementById("example-grid");
+      grid.innerHTML = "";
+
+      PROBLEM.examples.forEach((example, index) => {
+        const card = document.createElement("article");
+        card.className = "example-card";
+        card.innerHTML = `
+          <header>
+            <strong>${example.label}</strong>
+            <button class="chip-button" type="button" data-example-index="${index}">Use This Case</button>
+          </header>
+          <div class="example-body">
+            <span class="vector-line">Input:  A = ${formatVector(example.a)}</span>
+            <span class="vector-line">        B = ${formatVector(example.b)}</span>
+            <span class="vector-line">Output: C = ${formatVector(example.c)}</span>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      grid.querySelectorAll("[data-example-index]").forEach((button) => {
+        button.addEventListener("click", () => useExample(Number.parseInt(button.dataset.exampleIndex, 10)));
+      });
+    }
+
+    function setupTabs() {
+      const tabs = Array.from(document.querySelectorAll(".tab"));
+      const panels = Array.from(document.querySelectorAll(".tab-panel"));
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const target = tab.dataset.tab;
+
+          tabs.forEach((node) => node.classList.toggle("active", node === tab));
+          panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === target));
+        });
+      });
     }
 
     function renderKernelMetadata() {
@@ -584,7 +1108,7 @@
       if (paramCount === 0) {
         const item = document.createElement("li");
         item.className = "meta-item";
-        item.textContent = "这个 kernel 没有参数，或者当前索引无效。";
+        item.textContent = "No kernel metadata yet. Upload a valid PTX file first.";
         meta.appendChild(item);
         return;
       }
@@ -604,13 +1128,16 @@
     function renderEmptyState() {
       const summary = document.getElementById("result-summary");
       const list = document.getElementById("result-list");
-      summary.innerHTML = '<span class="pill">等待上传 PTX</span>';
+      const vector = document.getElementById("result-vector");
+      summary.innerHTML = '<span class="pill">Waiting for a run</span>';
       list.innerHTML = "";
+      vector.textContent = "C = [ waiting for a run ]";
     }
 
     function renderResults(inputA, inputB, output) {
       const summary = document.getElementById("result-summary");
       const list = document.getElementById("result-list");
+      const vector = document.getElementById("result-vector");
       summary.innerHTML = "";
       list.innerHTML = "";
 
@@ -620,19 +1147,26 @@
 
       const status = document.createElement("span");
       status.className = `pill ${allMatch ? "good" : "warn"}`;
-      status.textContent = allMatch ? "结果校验通过" : "结果与预期不一致";
+      status.textContent = allMatch ? "Accepted" : "Wrong Answer";
 
       const count = document.createElement("span");
       count.className = "pill";
-      count.textContent = `元素数量: ${output.length}`;
+      count.textContent = `Elements: ${output.length}`;
+
+      const expectedBadge = document.createElement("span");
+      expectedBadge.className = "pill";
+      expectedBadge.textContent = `Expected C = ${formatVector(expected)}`;
 
       summary.appendChild(status);
       summary.appendChild(count);
+      summary.appendChild(expectedBadge);
+
+      vector.textContent = `C = ${formatVector(output)}`;
 
       for (let i = 0; i < output.length; i += 1) {
         const item = document.createElement("li");
         item.className = "result-item";
-        item.innerHTML = `<strong>index ${i}</strong>A=${inputA[i]} | B=${inputB[i]} | expected=${expected[i]} | wasm=${output[i]}`;
+        item.innerHTML = `<strong>C[${i}] = ${formatNumber(output[i])}</strong>A=${formatNumber(inputA[i])}, B=${formatNumber(inputB[i])}, expected=${formatNumber(expected[i])}`;
         list.appendChild(item);
       }
     }
@@ -659,7 +1193,7 @@
 
         if (!ok) {
           const error = window.Module.ccall("ptxvm_get_last_error", "string", [], []);
-          pushLog(error || "加载 PTX 失败。", "stderr");
+          pushLog(error || "Failed to load the PTX submission.", "stderr");
           return;
         }
 
@@ -679,9 +1213,9 @@
 
         renderKernelMetadata();
         renderEmptyState();
-        pushLog(`已加载 PTX 文件: ${file.name}`, "runtime");
+        pushLog(`Loaded PTX submission: ${file.name}`, "runtime");
       } catch (error) {
-        pushLog(`读取文件时出错: ${error.message}`, "stderr");
+        pushLog(`File read failed: ${error.message}`, "stderr");
       }
     }
 
@@ -694,12 +1228,12 @@
       const inputB = parseFloatList(document.getElementById("input-b").value);
 
       if (inputA.length === 0 || inputB.length === 0) {
-        pushLog("请输入至少一个 float 值。", "stderr");
+        pushLog("Both vectors must contain at least one float.", "stderr");
         return;
       }
 
       if (inputA.length !== inputB.length) {
-        pushLog("Input A 和 Input B 的长度必须一致。", "stderr");
+        pushLog("Vectors A and B must have identical lengths.", "stderr");
         return;
       }
 
@@ -721,7 +1255,7 @@
 
         if (!ok) {
           const error = window.Module.ccall("ptxvm_get_last_error", "string", [], []);
-          pushLog(error || "Kernel 运行失败。", "stderr");
+          pushLog(error || "Kernel execution failed.", "stderr");
           return;
         }
 
@@ -732,7 +1266,7 @@
         }
 
         renderResults(inputA, inputB, output);
-        pushLog(`Kernel ${kernelName} 运行完成，输出元素数 ${output.length}。`, "runtime");
+        pushLog(`Judge finished running kernel ${kernelName}.`, "runtime");
       } finally {
         window.Module._free(inputAPtr);
         window.Module._free(inputBPtr);
@@ -740,11 +1274,19 @@
     }
 
     window.addEventListener("DOMContentLoaded", () => {
-      resetInputs();
+      renderProblemList();
+      renderStatement();
+      renderExamples();
+      setupTabs();
+      useExample(currentExampleIndex);
+
       document.getElementById("ptx-file").addEventListener("change", handleFileChange);
       document.getElementById("kernel-select").addEventListener("change", renderKernelMetadata);
       document.getElementById("run-button").addEventListener("click", runVectorAdd);
-      document.getElementById("reset-button").addEventListener("click", resetInputs);
+      document.getElementById("reset-button").addEventListener("click", () => useExample(0));
+      document.getElementById("example-1-button").addEventListener("click", () => useExample(0));
+      document.getElementById("example-2-button").addEventListener("click", () => useExample(1));
+
       renderEmptyState();
     });
   </script>
