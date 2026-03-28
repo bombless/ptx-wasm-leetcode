@@ -58,7 +58,7 @@ public:
     PageFaultHandler pageFaultHandler;
     
     // Page size (4KB by default)
-    static const uint64_t PAGE_SIZE = 4096;
+    static const uint64_t kPageSize = 4096;
     
     // Cache configuration
     CacheConfig cacheConfig;
@@ -116,11 +116,11 @@ public:
     }
     
     uint64_t getVirtualPage(uint64_t virtualAddress) const {
-        return virtualAddress / PAGE_SIZE;
+        return virtualAddress / kPageSize;
     }
     
     uint64_t getPageOffset(uint64_t virtualAddress) const {
-        return virtualAddress % PAGE_SIZE;
+        return virtualAddress % kPageSize;
     }
     
     MemoryAccessResult performPhysicalAccess(uint64_t physicalAddress, MemoryAccessFlags flags) {
@@ -137,7 +137,7 @@ MemorySubsystem::MemorySubsystem() : pImpl(std::make_unique<Impl>()) {
     // Initialize default TLB config
     pImpl->tlbConfig.size = 32; // 32-entry TLB
     pImpl->tlbConfig.enabled = true;
-    pImpl->tlbConfig.pageSize = Impl::PAGE_SIZE;
+    pImpl->tlbConfig.pageSize = Impl::kPageSize;
     
     // Initialize TLB
     pImpl->tlb.resize(pImpl->tlbConfig.size);

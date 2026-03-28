@@ -331,7 +331,7 @@ public:
                 break;
         }
         
-        storeRegisterValue(instr.dest.registerIndex, value);
+        storeTypedRegisterValue(instr.dest.registerIndex, value, instr.dataType);
         m_currentInstructionIndex++;
         return true;
     }
@@ -345,7 +345,7 @@ public:
             return true;
         }
         
-        int64_t src = getSourceValue(instr.sources[0]);
+        uint64_t src = getSourceBits(instr.sources[0], instr.dataType);
         
         // Calculate memory address
         uint64_t address = instr.dest.address;
@@ -1058,7 +1058,7 @@ public:
         }
         
         // Store result in destination register
-        storeRegisterValue(instr.dest.registerIndex, value);
+        storeTypedRegisterValue(instr.dest.registerIndex, value, instr.dataType);
         
         // Move to next instruction
         m_currentInstructionIndex++;
@@ -1075,7 +1075,7 @@ public:
         }
         
         // Get source value to store
-        int64_t src = getSourceValue(instr.sources[0]);
+        uint64_t src = getSourceBits(instr.sources[0], instr.dataType);
         
         // Calculate memory address
         uint64_t address = instr.dest.address;
@@ -1246,17 +1246,35 @@ public:
         std::cout << "LD_PARAM: loading from offset " << paramOffset 
                   << " (source type=" << static_cast<int>(instr.sources[0].type) << ")" << std::endl;
         
-        // Read from parameter memory
-        // Note: Use buffer-relative addressing (paramOffset directly), not absolute address
-        // The PARAMETER memory space buffer starts at offset 0
-        paramValue = impl.m_memorySubsystem->read<uint64_t>(MemorySpace::PARAMETER, paramOffset);
+        // Read from parameter memory using the operand's declared data type.
+        switch (instr.dataType) {
+            case DataType::S8:
+            case DataType::U8:
+                paramValue = impl.m_memorySubsystem->read<uint8_t>(MemorySpace::PARAMETER, paramOffset);
+                break;
+            case DataType::S16:
+            case DataType::U16:
+                paramValue = impl.m_memorySubsystem->read<uint16_t>(MemorySpace::PARAMETER, paramOffset);
+                break;
+            case DataType::S32:
+            case DataType::U32:
+            case DataType::F32:
+                paramValue = impl.m_memorySubsystem->read<uint32_t>(MemorySpace::PARAMETER, paramOffset);
+                break;
+            case DataType::S64:
+            case DataType::U64:
+            case DataType::F64:
+            default:
+                paramValue = impl.m_memorySubsystem->read<uint64_t>(MemorySpace::PARAMETER, paramOffset);
+                break;
+        }
         
         // DEBUG: Print loaded value
         std::cout << "LD_PARAM: loaded value 0x" << std::hex << paramValue << std::dec 
                   << " into %r" << instr.dest.registerIndex << std::endl;
         
         // Store result in destination register
-        impl.storeRegisterValue(instr.dest.registerIndex, paramValue);
+        impl.storeTypedRegisterValue(instr.dest.registerIndex, paramValue, instr.dataType);
         
         // Move to next instruction
         impl.m_currentInstructionIndex++;
@@ -2052,6 +2070,28 @@ public:
                 return 0;
         }
     }
+
+    uint64_t getSourceBits(const Operand& operand, DataType dataType) {
+        if (operand.type == OperandType::REGISTER) {
+            m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_READS);
+
+            if (dataType == DataType::F32) {
+                float value = m_registerBank->readFloatRegister(operand.registerIndex);
+                uint32_t bits = 0;
+                std::memcpy(&bits, &value, sizeof(bits));
+                return bits;
+            }
+
+            if (dataType == DataType::F64) {
+                double value = m_registerBank->readDoubleRegister(operand.registerIndex);
+                uint64_t bits = 0;
+                std::memcpy(&bits, &value, sizeof(bits));
+                return bits;
+            }
+        }
+
+        return static_cast<uint64_t>(getSourceValue(operand));
+    }
     
     // Store value in register with performance tracking
     void storeRegisterValue(size_t index, uint64_t value) {
@@ -2059,6 +2099,27 @@ public:
         m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_WRITES);
         
         // Write to register
+        m_registerBank->writeRegister(index, value);
+    }
+
+    void storeTypedRegisterValue(size_t index, uint64_t value, DataType dataType) {
+        m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_WRITES);
+
+        if (dataType == DataType::F32) {
+            uint32_t bits = static_cast<uint32_t>(value);
+            float floatValue = 0.0f;
+            std::memcpy(&floatValue, &bits, sizeof(floatValue));
+            m_registerBank->writeFloatRegister(index, floatValue);
+            return;
+        }
+
+        if (dataType == DataType::F64) {
+            double doubleValue = 0.0;
+            std::memcpy(&doubleValue, &value, sizeof(doubleValue));
+            m_registerBank->writeDoubleRegister(index, doubleValue);
+            return;
+        }
+
         m_registerBank->writeRegister(index, value);
     }
 

@@ -10,6 +10,16 @@
 
 // PTXInstruction is defined in instruction_types.hpp (included via parser.hpp)
 
+namespace {
+
+bool isFunctionDeclarationLine(const std::string& line)
+{
+    static const std::regex functionDeclRegex(R"((?:^|\s)\.(?:entry|func)\b)");
+    return std::regex_search(line, functionDeclRegex);
+}
+
+} // namespace
+
 // PTXParser::Impl - 私有实现类
 class PTXParser::Impl
 {
@@ -117,7 +127,7 @@ bool PTXParser::Impl::firstPass()
         const std::string &line = m_lines[i];
         if (parseMetadata(line))
             continue;
-        if (line.find(".entry") == 0 || line.find(".func") == 0)
+        if (isFunctionDeclarationLine(line))
         {
             currentFunction = parseFunctionDeclaration(line, i);
             if (currentFunction)
@@ -173,7 +183,7 @@ bool PTXParser::Impl::secondPass()
         const std::string& line = m_lines[i];
         
         // Check for function declaration (before opening brace)
-        if (!inFunctionBody && (line.find(".entry") == 0 || line.find(".func") == 0))
+        if (!inFunctionBody && isFunctionDeclarationLine(line))
         {
             std::string funcName = extractFunctionName(line);
             // Find this function in the already-parsed functions
@@ -240,9 +250,15 @@ bool PTXParser::Impl::parseMetadata(const std::string &line)
 PTXFunction *PTXParser::Impl::parseFunctionDeclaration(const std::string &line, size_t &lineIndex)
 {
     PTXFunction func;
-    func.isEntry = (line.find(".entry") == 0);
+    func.isEntry = (line.find(".entry") != std::string::npos);
     std::string fullDecl = line;
-    while (fullDecl.find(")") == std::string::npos && lineIndex + 1 < m_lines.size())
+
+    // PTX declarations can span several lines and may include a host-language
+    // signature before the actual `.param` list, e.g.:
+    //   .visible .entry vector_add(float const*, float const*)( ... )
+    // Keep collecting lines until the opening brace so we capture the real
+    // parameter list instead of stopping at the host signature.
+    while (lineIndex + 1 < m_lines.size() && trim(m_lines[lineIndex + 1]) != "{")
     {
         lineIndex++;
         fullDecl += " " + m_lines[lineIndex];
@@ -738,6 +754,8 @@ InstructionTypes PTXParser::Impl::opcodeToInstructionType(const std::string &opc
     }
     if (opcode == "mov")
         return InstructionTypes::MOV;
+    if (opcode == "cvta")
+        return InstructionTypes::MOV;
     if (opcode == "bar" || opcode == "barrier")
         return InstructionTypes::BARRIER;
     return InstructionTypes::MAX_INSTRUCTION_TYPE;
@@ -1004,7 +1022,7 @@ Operand PTXParser::Impl::parseOperand(const std::string &str)
     
     // If nothing else matched, treat it as a label (for branch targets)
     // Labels are identifiers that don't match any of the above patterns
-    if (!s.empty() && (std::isalpha(s[0]) || s[0] == '_'))
+    if (!s.empty() && (std::isalpha(static_cast<unsigned char>(s[0])) || s[0] == '_' || s[0] == '$'))
     {
         op.type = OperandType::LABEL;
         op.labelName = s;

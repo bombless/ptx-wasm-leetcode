@@ -13,6 +13,7 @@ include_directories(${GTEST_INCLUDE_DIRS})
 # Add system tests
 add_executable(system_tests
     system_tests/smoke_test.cpp
+    system_tests/parser_compatibility_test.cpp
     # system_tests/performance_test.cpp
     # system_tests/memory_performance_test.cpp
     # system_tests/reconvergence_performance_test.cpp
@@ -21,6 +22,12 @@ add_executable(system_tests
 )
 
 target_compile_options(system_tests PRIVATE -g)
+
+target_include_directories(system_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/parser
+)
 
 # Link system tests
 target_link_libraries(system_tests
