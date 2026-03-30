@@ -96,6 +96,7 @@ if(EMSCRIPTEN)
     set(BARRACUDA_WEB_OUTPUT_DIR "${CMAKE_BINARY_DIR}/webapp")
     set(BARRACUDA_WEB_JS "${BARRACUDA_WEB_OUTPUT_DIR}/barracuda.js")
     set(PTX_WEB_INDEX_HTML "${BARRACUDA_WEB_OUTPUT_DIR}/index.html")
+    set(LEETGPU_CATALOG_JS "${BARRACUDA_WEB_OUTPUT_DIR}/challenges.generated.js")
     set(BARRACUDA_WEB_SOURCES
         ${CMAKE_SOURCE_DIR}/web/barracuda_web_bridge.c
         ${BARRACUDA_ROOT}/src/fe/bc_err.c
@@ -142,12 +143,17 @@ if(EMSCRIPTEN)
     add_custom_target(barracuda_web DEPENDS "${BARRACUDA_WEB_JS}")
 
     add_custom_command(
-        OUTPUT "${PTX_WEB_INDEX_HTML}"
+        OUTPUT "${PTX_WEB_INDEX_HTML}" "${LEETGPU_CATALOG_JS}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${BARRACUDA_WEB_OUTPUT_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_SOURCE_DIR}/web/index.html
             "${PTX_WEB_INDEX_HTML}"
-        DEPENDS ${CMAKE_SOURCE_DIR}/web/index.html
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/web/challenges.generated.js
+            "${LEETGPU_CATALOG_JS}"
+        DEPENDS
+            ${CMAKE_SOURCE_DIR}/web/index.html
+            ${CMAKE_SOURCE_DIR}/web/challenges.generated.js
         COMMENT "Copying browser UI assets"
         VERBATIM
     )

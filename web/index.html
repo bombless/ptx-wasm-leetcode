@@ -187,6 +187,9 @@
       margin: 16px 0 0;
       display: grid;
       gap: 12px;
+      max-height: min(68vh, 1200px);
+      overflow: auto;
+      padding-right: 4px;
     }
 
     .problem-row {
@@ -264,6 +267,11 @@
     }
 
     .badge.accent {
+      background: rgba(88, 166, 255, 0.14);
+      color: #a5d6ff;
+    }
+
+    .pill.accent {
       background: rgba(88, 166, 255, 0.14);
       color: #a5d6ff;
     }
@@ -364,6 +372,69 @@
       margin: 0;
       color: var(--text);
       line-height: 1.72;
+    }
+
+    .problem-spec {
+      color: var(--text);
+      line-height: 1.72;
+    }
+
+    .problem-spec > :first-child {
+      margin-top: 0;
+    }
+
+    .problem-spec h2,
+    .problem-spec h3 {
+      margin: 24px 0 10px;
+      font-size: 1.02rem;
+      letter-spacing: -0.02em;
+    }
+
+    .problem-spec p,
+    .problem-spec li {
+      color: var(--text);
+    }
+
+    .problem-spec ul,
+    .problem-spec ol {
+      padding-left: 20px;
+      margin: 10px 0 0;
+    }
+
+    .problem-spec li + li {
+      margin-top: 8px;
+    }
+
+    .problem-spec pre,
+    .problem-spec code,
+    .problem-spec table {
+      font-family: var(--mono);
+    }
+
+    .problem-spec pre {
+      margin: 12px 0 0;
+      padding: 16px;
+      border-radius: 16px;
+      background: #0f141b;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .problem-spec table {
+      width: 100%;
+      display: block;
+      overflow: auto;
+    }
+
+    .problem-spec svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .problem-spec a {
+      color: #9fd0ff;
     }
 
     .bullet-list {
@@ -715,9 +786,9 @@
       <section class="card">
         <div class="card-body">
           <div class="eyebrow">Problem Set</div>
-          <h2>GPU Warmup Track</h2>
+          <h2>LeetGPU Browser Catalog</h2>
           <p class="muted">
-            这个页面是一个 GPU 题目练习场。左边看题，右边直接写或导入 CUDA 源码，再在浏览器里编译成 PTX 并跑 judge。
+            左边是 1 到 74 题的题库目录。当前浏览器 judge 已支持第 1 题和第 2 题完整运行，其他题先提供题面与 CUDA starter 预览，能否编译和运行会在界面里明确标注。
           </p>
           <ul id="problem-list" class="problem-list"></ul>
         </div>
@@ -746,12 +817,7 @@
               <div class="problem-index" id="problem-id">001</div>
               <div>
                 <h1 id="problem-title">Element-Wise Vector Add</h1>
-                <div class="badge-row">
-                  <span class="badge good" id="problem-difficulty">Easy</span>
-                  <span class="badge accent">GPU</span>
-                  <span class="badge accent">PTX</span>
-                  <span class="badge accent">Float32</span>
-                </div>
+                <div id="problem-badges" class="badge-row"></div>
               </div>
             </div>
           </div>
@@ -765,24 +831,7 @@
           <div class="tabpanels">
             <section class="tab-panel active" data-panel="statement">
               <div class="content-block">
-                <h3>Problem Statement</h3>
-                <p id="problem-statement"></p>
-              </div>
-
-              <div class="content-block">
-                <h3>Implementation Requirements</h3>
-                <ul id="requirements-list" class="bullet-list"></ul>
-              </div>
-
-              <div class="content-block">
-                <h3>Constraints</h3>
-                <ul id="constraints-list" class="bullet-list"></ul>
-              </div>
-
-              <div class="content-block">
-                <h3>Performance Note</h3>
-                <div id="performance-note" class="hint-box">
-                </div>
+                <div id="problem-spec" class="problem-spec"></div>
               </div>
             </section>
 
@@ -936,32 +985,18 @@
     </div>
   </div>
 
+  <script src="challenges.generated.js"></script>
   <script>
-    const PROBLEMS = [
-      {
-        id: "001",
-        title: "Element-Wise Vector Add",
-        difficulty: "Easy",
+    const MAX_CHALLENGE_ID = 74;
+    const SUPPORTED_PROBLEM_OVERRIDES = {
+      1: {
         kind: "vector-add",
-        listTag: "Warmup",
-        statement:
-          "Write a GPU program that performs element-wise addition of two vectors containing 32-bit floating point numbers. The program should take two input vectors of equal length and produce a single output vector containing their sum.",
-        requirements: [
-          "External libraries are not permitted.",
-          "The solve function signature must remain unchanged.",
-          "The final result must be stored in vector C."
-        ],
-        constraints: [
-          "Input vectors A and B have identical lengths.",
-          "1 <= N <= 100,000,000.",
-          "Performance is measured with N = 25,000,000."
-        ],
-        performanceNote:
-          "Judge data is lightweight in-browser, but the original challenge measures performance at N = 25,000,000. Keep your kernel launch and memory access pattern GPU-friendly.",
+        supportsRun: true,
+        supportsCudaCompile: true,
         judgeContract:
           "The browser judge expects a PTX entry kernel with three pointer parameters plus one 32-bit length N, then validates that vector C matches a CPU reference.",
         submissionHint:
-          "Write or import a .cu submission on the right side. The page compiles it to PTX in-browser with BarraCUDA, detects the generated entry kernel, and runs it against the selected testcase.",
+          "Write or import a .cu submission on the right side. The simplest browser-compatible path is a single extern \"C\" __global__ solve kernel with the required four parameters.",
         testcaseHint:
           "Use the official examples or paste your own float arrays.",
         testcaseHelp:
@@ -969,19 +1004,16 @@
         resultTitle: "Output Vector C",
         resultSubtitle:
           "The final result must be stored in vector C. The judge compares it to a CPU reference.",
-        starterCode: [
-          "extern \"C\" __global__",
-          "void solve(const float* A, const float* B, float* C, int N) {",
-          "    int idx = blockIdx.x * blockDim.x + threadIdx.x;",
-          "",
-          "    if (idx >= N) {",
-          "        return;",
-          "    }",
-          "",
-          "    // TODO: write the result into C[idx]",
-          "    // C[idx] = ...",
-          "}"
-        ].join("\n"),
+        starterCode: `#include <cuda_runtime.h>
+
+extern "C" __global__ void solve(const float* A, const float* B, float* C, int N) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N) {
+        // TODO: write the element-wise sum into C[idx].
+        // C[idx] = A[idx] + B[idx];
+    }
+}
+`,
         examples: [
           {
             label: "Example 1",
@@ -997,30 +1029,14 @@
           }
         ]
       },
-      {
-        id: "002",
-        title: "Matrix Multiplication",
-        difficulty: "Easy",
+      2: {
         kind: "matrix-multiplication",
-        listTag: "LeetGPU #2",
-        statement:
-          "Write a GPU program that multiplies two matrices of 32-bit floating point numbers. Given matrix A of dimensions M x N and matrix B of dimensions N x K, compute the product matrix C = A x B, which has dimensions M x K. All matrices are stored in row-major format.",
-        requirements: [
-          "External libraries are not permitted.",
-          "The solve function signature must remain unchanged.",
-          "The final result must be stored in matrix C."
-        ],
-        constraints: [
-          "1 <= M, N, K <= 8192.",
-          "Matrices A and B are row-major buffers with lengths M x N and N x K.",
-          "Performance is measured with M = 8192, N = 6144, K = 4096."
-        ],
-        performanceNote:
-          "Judge data is lightweight in-browser, but the original challenge measures performance at M = 8192, N = 6144, K = 4096. Tile your work and keep memory access patterns coherent.",
+        supportsRun: true,
+        supportsCudaCompile: true,
         judgeContract:
           "The browser judge expects a PTX entry kernel with three pointer parameters plus 32-bit M, N, and K scalars. It treats A as M x N and B as N x K in row-major order, then validates matrix C against a CPU reference.",
         submissionHint:
-          "Write or import a .cu submission on the right side. The page compiles it to PTX in-browser with BarraCUDA, detects the generated entry kernel, and runs it against the selected testcase.",
+          "Write or import a .cu submission on the right side. For the browser compiler, prefer a single extern \"C\" __global__ solve kernel that reads blockIdx/threadIdx directly instead of wrapping a second host-side launch.",
         testcaseHint:
           "Paste row-major float arrays for A and B, then provide dimensions M, N, and K.",
         testcaseHelp:
@@ -1028,24 +1044,20 @@
         resultTitle: "Output Matrix C",
         resultSubtitle:
           "The final result must be stored in matrix C. The judge compares it to a CPU row-major multiplication result.",
-        starterCode: [
-          "extern \"C\" __global__",
-          "void solve(const float* A, const float* B, float* C, int M, int N, int K) {",
-          "    int col = blockIdx.x * blockDim.x + threadIdx.x;",
-          "    int row = blockIdx.y * blockDim.y + threadIdx.y;",
-          "",
-          "    if (row >= M || col >= K) {",
-          "        return;",
-          "    }",
-          "",
-          "    float acc = 0.0f;",
-          "    for (int i = 0; i < N; ++i) {",
-          "        acc += A[row * N + i] * B[i * K + col];",
-          "    }",
-          "",
-          "    C[row * K + col] = acc;",
-          "}"
-        ].join("\n"),
+        starterCode: `#include <cuda_runtime.h>
+
+extern "C" __global__ void solve(const float* A, const float* B, float* C, int M, int N, int K) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    if (row < M && col < K) {
+        float sum = 0.0f;
+        for (int i = 0; i < N; i = i + 1) {
+            // TODO: accumulate A[row * N + i] * B[i * K + col].
+        }
+        C[row * K + col] = sum;
+    }
+}
+`,
         examples: [
           {
             label: "Example 1",
@@ -1067,7 +1079,9 @@
           }
         ]
       }
-    ];
+    };
+
+    let PROBLEMS = [];
 
     const logQueue = [];
     let currentProblemIndex = 0;
@@ -1077,7 +1091,245 @@
     let barraModulePromise = null;
 
     function getCurrentProblem() {
-      return PROBLEMS[currentProblemIndex];
+      return PROBLEMS[currentProblemIndex] || null;
+    }
+
+    function cloneJson(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    function titleCase(value) {
+      const text = String(value ?? "").trim();
+      return text ? `${text.slice(0, 1).toUpperCase()}${text.slice(1)}` : "Unknown";
+    }
+
+    function zeroPad(value) {
+      return String(value).padStart(3, "0");
+    }
+
+    function extractSignatureHint(starterCode) {
+      if (!starterCode) {
+        return "";
+      }
+
+      const lines = starterCode
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      const fragments = [];
+      let started = false;
+      for (const line of lines) {
+        if (line.startsWith('extern "C"') || line.startsWith("void solve(")) {
+          started = true;
+        }
+        if (!started) {
+          continue;
+        }
+
+        fragments.push(line);
+        const joined = fragments.join(" ");
+        if (line.endsWith("{") || line.endsWith("}") || line.endsWith(");") || joined.length > 180) {
+          return joined.trim();
+        }
+      }
+
+      return fragments.join(" ").trim();
+    }
+
+    function buildPlaceholderProblem(challengeId, reason) {
+      return {
+        id: zeroPad(challengeId),
+        numericId: challengeId,
+        title: `Challenge ${challengeId}`,
+        difficulty: "Unknown",
+        accessTier: "unknown",
+        available: false,
+        kind: "metadata-only",
+        supportsRun: false,
+        supportsCudaCompile: false,
+        unsupportedReason: reason,
+        specHtml: `<p>${reason}</p>`,
+        starterCode: "",
+        signatureHint: "",
+        examples: [],
+        judgeContract: reason,
+        submissionHint: reason,
+        testcaseHint: "This challenge cannot be executed in the browser judge right now.",
+        testcaseHelp: reason,
+        resultTitle: "Judge Status",
+        resultSubtitle: reason
+      };
+    }
+
+    function buildProblemFromCatalogEntry(entry) {
+      const numericId = Number(entry.numericId ?? Number.parseInt(entry.id, 10));
+      return {
+        id: zeroPad(numericId),
+        numericId,
+        title: entry.title || `Challenge ${numericId}`,
+        difficulty: titleCase(entry.difficulty || entry.difficultyLevel || "unknown"),
+        accessTier: entry.accessTier || "unknown",
+        available: entry.available !== false,
+        kind: entry.kind || "metadata-only",
+        supportsRun: Boolean(entry.supportsRun),
+        supportsCudaCompile: Boolean(entry.supportsCudaCompile),
+        unsupportedReason: entry.unsupportedReason || "",
+        specHtml: entry.specHtml || "<p>No challenge description is available.</p>",
+        starterCode: typeof entry.starterCode === "string" ? entry.starterCode : "",
+        signatureHint: entry.signatureHint || "",
+        examples: Array.isArray(entry.examples) ? cloneJson(entry.examples) : [],
+        judgeContract: entry.judgeContract || "",
+        submissionHint: entry.submissionHint || "",
+        testcaseHint: entry.testcaseHint || "",
+        testcaseHelp: entry.testcaseHelp || "",
+        resultTitle: entry.resultTitle || "",
+        resultSubtitle: entry.resultSubtitle || ""
+      };
+    }
+
+    function getSupportState(problem) {
+      if (!problem.available) {
+        return "missing";
+      }
+      if (problem.supportsRun) {
+        return "runnable";
+      }
+      if (problem.supportsCudaCompile) {
+        return "compile-only";
+      }
+      return "view-only";
+    }
+
+    function getStatusLabel(state) {
+      switch (state) {
+        case "runnable":
+          return "Runnable";
+        case "compile-only":
+          return "Compile Only";
+        case "missing":
+          return "Missing API";
+        default:
+          return "View Only";
+      }
+    }
+
+    function getStatusClass(state) {
+      switch (state) {
+        case "runnable":
+          return "good";
+        case "compile-only":
+          return "warn";
+        default:
+          return "accent";
+      }
+    }
+
+    function getDifficultyClass(difficulty) {
+      switch (String(difficulty).toLowerCase()) {
+        case "easy":
+          return "good";
+        case "medium":
+          return "warn";
+        default:
+          return "accent";
+      }
+    }
+
+    function finalizeProblem(problem) {
+      const starterCode = typeof problem.starterCode === "string" ? problem.starterCode : "";
+      const finalized = {
+        id: zeroPad(problem.numericId),
+        numericId: problem.numericId,
+        title: problem.title || `Challenge ${problem.numericId}`,
+        difficulty: titleCase(problem.difficulty || "unknown"),
+        accessTier: problem.accessTier || "unknown",
+        available: problem.available !== false,
+        kind: problem.kind || "metadata-only",
+        supportsRun: Boolean(problem.supportsRun),
+        supportsCudaCompile: Boolean(problem.supportsCudaCompile && starterCode.trim()),
+        unsupportedReason: problem.unsupportedReason || "",
+        specHtml: problem.specHtml || "<p>No challenge description is available.</p>",
+        starterCode,
+        signatureHint: problem.signatureHint || extractSignatureHint(starterCode),
+        examples: Array.isArray(problem.examples) ? cloneJson(problem.examples) : [],
+        judgeContract:
+          problem.judgeContract ||
+          problem.unsupportedReason ||
+          "The browser judge is not implemented for this challenge yet.",
+        submissionHint:
+          problem.submissionHint ||
+          (
+            starterCode.trim()
+              ? "You can inspect the official CUDA starter and compile your own .cu file in-browser."
+              : "This challenge does not provide a CUDA starter in the API, so browser compilation is disabled."
+          ),
+        testcaseHint:
+          problem.testcaseHint ||
+          (problem.supportsRun
+            ? "Use the official examples or paste your own testcase."
+            : "A browser-side judge is not available for this challenge yet."),
+        testcaseHelp:
+          problem.testcaseHelp ||
+          problem.unsupportedReason ||
+          "A browser-side judge is not available for this challenge yet.",
+        resultTitle: problem.resultTitle || (problem.supportsRun ? "Judge Result" : "Judge Status"),
+        resultSubtitle:
+          problem.resultSubtitle ||
+          problem.unsupportedReason ||
+          "A browser-side judge is not available for this challenge yet."
+      };
+
+      finalized.supportState = getSupportState(finalized);
+      finalized.statusLabel = getStatusLabel(finalized.supportState);
+      finalized.statusClass = getStatusClass(finalized.supportState);
+      finalized.difficultyClass = getDifficultyClass(finalized.difficulty);
+      return finalized;
+    }
+
+    function applyProblemOverrides(problem) {
+      const override = SUPPORTED_PROBLEM_OVERRIDES[problem.numericId];
+      if (!override) {
+        return finalizeProblem(problem);
+      }
+
+      return finalizeProblem({
+        ...problem,
+        ...cloneJson(override),
+        examples: Array.isArray(override.examples) ? cloneJson(override.examples) : problem.examples
+      });
+    }
+
+    function initializeCatalog() {
+      const generatedProblems =
+        Array.isArray(window.LEETGPU_GENERATED_PROBLEMS)
+          ? window.LEETGPU_GENERATED_PROBLEMS
+          : Array.isArray(window.LEETGPU_CATALOG?.challenges)
+            ? window.LEETGPU_CATALOG.challenges
+            : [];
+
+      const generatedById = new Map();
+      for (const entry of generatedProblems) {
+        const numericId = Number(entry.numericId ?? Number.parseInt(entry.id, 10));
+        if (Number.isInteger(numericId)) {
+          generatedById.set(numericId, entry);
+        }
+      }
+
+      PROBLEMS = [];
+      for (let challengeId = 1; challengeId <= MAX_CHALLENGE_ID; challengeId += 1) {
+        const rawProblem = generatedById.get(challengeId);
+        const baseProblem = rawProblem
+          ? buildProblemFromCatalogEntry(rawProblem)
+          : buildPlaceholderProblem(challengeId, "This challenge is missing from the local browser catalog.");
+        PROBLEMS.push(applyProblemOverrides(baseProblem));
+      }
+
+      if (generatedProblems.length > 0) {
+        pushLog(`Loaded ${PROBLEMS.length} challenges from the local LeetGPU catalog.`, "runtime");
+      } else {
+        pushLog("Local challenge catalog was not found. Placeholder entries are being used instead.", "stderr");
+      }
     }
 
     function formatNumber(value) {
@@ -1168,7 +1420,7 @@
     }
 
     function parseFloatList(text) {
-      return text
+      return String(text ?? "")
         .split(/[\s,]+/)
         .map((value) => value.trim())
         .filter(Boolean)
@@ -1206,9 +1458,41 @@
         actual.every((value, index) => Math.abs(value - expected[index]) <= tolerance);
     }
 
+    function createBadge(label, className = "accent") {
+      const badge = document.createElement("span");
+      badge.className = `badge ${className}`;
+      badge.textContent = label;
+      return badge;
+    }
+
+    function setHintBox(id, title, text) {
+      const box = document.getElementById(id);
+      if (!box) {
+        return;
+      }
+
+      box.innerHTML = "";
+      const heading = document.createElement("strong");
+      heading.textContent = title;
+      box.appendChild(heading);
+
+      const body = document.createElement("div");
+      body.textContent = text;
+      box.appendChild(body);
+    }
+
+    function clearTestcaseEditor() {
+      document.getElementById("input-a").value = "";
+      document.getElementById("input-b").value = "";
+      document.getElementById("matrix-m").value = "";
+      document.getElementById("matrix-n").value = "";
+      document.getElementById("matrix-k").value = "";
+    }
+
     function clearLoadedProgramState() {
       loadedProgramProblemId = null;
 
+      const problem = getCurrentProblem();
       const select = document.getElementById("kernel-select");
       const meta = document.getElementById("kernel-meta");
       if (select) {
@@ -1216,16 +1500,43 @@
         select.disabled = true;
       }
       if (meta) {
-        meta.innerHTML = '<li class="meta-item">Compile a valid CUDA submission to inspect the kernel signature.</li>';
+        meta.innerHTML = "";
+        const item = document.createElement("li");
+        item.className = "meta-item";
+        item.textContent = problem?.supportsCudaCompile
+          ? "Compile a valid CUDA submission to inspect the kernel signature."
+          : "This challenge does not currently expose a browser CUDA compile flow.";
+        meta.appendChild(item);
       }
 
-      document.getElementById("run-button").disabled = true;
+      const runButton = document.getElementById("run-button");
+      if (runButton) {
+        runButton.disabled = true;
+      }
+    }
+
+    function renderProblemBadges(problem) {
+      const row = document.getElementById("problem-badges");
+      if (!row || !problem) {
+        return;
+      }
+
+      row.innerHTML = "";
+      row.appendChild(createBadge(problem.difficulty, problem.difficultyClass));
+      row.appendChild(createBadge(problem.statusLabel, problem.statusClass));
+      row.appendChild(createBadge(`LeetGPU #${problem.numericId}`, "accent"));
+
+      if (problem.accessTier !== "unknown") {
+        row.appendChild(createBadge(titleCase(problem.accessTier), "accent"));
+      }
+
+      row.appendChild(createBadge(problem.supportsCudaCompile ? "CUDA Starter" : "No CUDA Starter", problem.supportsCudaCompile ? "accent" : "warn"));
     }
 
     function useExample(index, pushMessage = true) {
       const problem = getCurrentProblem();
-      const example = problem.examples[index];
-      if (!example) {
+      const example = problem?.examples?.[index];
+      if (!problem || !example) {
         return;
       }
 
@@ -1262,18 +1573,35 @@
       resetSourceEditor(false);
       setGeneratedPTX("");
       clearLoadedProgramState();
-      useExample(0, false);
+
+      const problem = getCurrentProblem();
+      if (problem?.examples?.length > 0) {
+        useExample(0, false);
+      } else {
+        clearTestcaseEditor();
+      }
+
       renderEmptyState();
 
-      if (pushMessage) {
-        const problem = getCurrentProblem();
+      if (pushMessage && problem) {
         pushLog(`Switched to Problem ${problem.id}: ${problem.title}.`, "runtime");
       }
     }
 
     function renderProblemList() {
       const list = document.getElementById("problem-list");
+      if (!list) {
+        return;
+      }
+
       list.innerHTML = "";
+      if (PROBLEMS.length === 0) {
+        const item = document.createElement("li");
+        item.className = "problem-row";
+        item.innerHTML = "<strong>Catalog is empty</strong>";
+        list.appendChild(item);
+        return;
+      }
 
       PROBLEMS.forEach((problem, index) => {
         const item = document.createElement("li");
@@ -1282,8 +1610,8 @@
           <small>Problem ${problem.id}</small>
           <strong>${problem.title}</strong>
           <div class="badge-row">
-            <span class="badge good">${problem.difficulty}</span>
-            <span class="badge accent">${problem.listTag}</span>
+            <span class="badge ${problem.difficultyClass}">${problem.difficulty}</span>
+            <span class="badge ${problem.statusClass}">${problem.statusLabel}</span>
           </div>
         `;
         item.addEventListener("click", () => selectProblem(index));
@@ -1293,40 +1621,60 @@
 
     function renderStatement() {
       const problem = getCurrentProblem();
+      if (!problem) {
+        return;
+      }
 
       document.getElementById("problem-id").textContent = problem.id;
       document.getElementById("problem-title").textContent = problem.title;
-      document.getElementById("problem-difficulty").textContent = problem.difficulty;
-      document.getElementById("problem-statement").textContent = problem.statement;
-      document.getElementById("starter-code").textContent = problem.starterCode;
-      document.getElementById("performance-note").textContent = problem.performanceNote;
-      document.getElementById("submission-hint").textContent = problem.submissionHint;
+      document.getElementById("problem-spec").innerHTML = problem.specHtml || "<p>No challenge description is available.</p>";
+      document.getElementById("starter-code").textContent =
+        problem.starterCode.trim() || "// This challenge does not provide a CUDA starter in the API.";
       document.getElementById("custom-testcase-subtle").textContent = problem.testcaseHint;
       document.getElementById("result-title").textContent = problem.resultTitle;
       document.getElementById("result-subtle").textContent = problem.resultSubtitle;
-      document.getElementById("judge-contract").innerHTML = `<strong>Judge Contract</strong>${problem.judgeContract}`;
 
-      const requirementsList = document.getElementById("requirements-list");
-      requirementsList.innerHTML = "";
-      for (const requirement of problem.requirements) {
-        const item = document.createElement("li");
-        item.textContent = requirement;
-        requirementsList.appendChild(item);
-      }
+      const submissionText = problem.signatureHint
+        ? `${problem.submissionHint}\n\nExpected solve signature:\n${problem.signatureHint}`
+        : problem.submissionHint;
 
-      const constraintsList = document.getElementById("constraints-list");
-      constraintsList.innerHTML = "";
-      for (const constraint of problem.constraints) {
-        const item = document.createElement("li");
-        item.textContent = constraint;
-        constraintsList.appendChild(item);
-      }
+      setHintBox("judge-contract", "Judge Contract", problem.judgeContract);
+      setHintBox(
+        "submission-hint",
+        problem.supportsCudaCompile ? "Submission Hint" : "Compiler Status",
+        submissionText
+      );
+      renderProblemBadges(problem);
     }
 
     function renderExamples() {
       const problem = getCurrentProblem();
       const grid = document.getElementById("example-grid");
+      if (!grid || !problem) {
+        return;
+      }
+
       grid.innerHTML = "";
+      if (problem.examples.length === 0) {
+        const card = document.createElement("article");
+        card.className = "example-card";
+        card.innerHTML = `
+          <header>
+            <strong>Examples</strong>
+            <span class="badge ${problem.statusClass}">${problem.statusLabel}</span>
+          </header>
+          <div class="example-body">
+            <div class="hint-box">
+              <strong>No preset browser testcase</strong>
+              ${problem.supportsRun
+                ? "This runnable problem currently has no preset example cards."
+                : "The official statement is still available in the Description tab. Browser testcase playback is not implemented for this challenge yet."}
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+        return;
+      }
 
       problem.examples.forEach((example, index) => {
         const card = document.createElement("article");
@@ -1367,7 +1715,18 @@
     function renderExampleButtons() {
       const problem = getCurrentProblem();
       const container = document.getElementById("example-buttons");
+      if (!container || !problem) {
+        return;
+      }
+
       container.innerHTML = "";
+      if (problem.examples.length === 0) {
+        const badge = document.createElement("span");
+        badge.className = `badge ${problem.statusClass}`;
+        badge.textContent = problem.statusLabel;
+        container.appendChild(badge);
+        return;
+      }
 
       problem.examples.forEach((example, index) => {
         const button = document.createElement("button");
@@ -1381,32 +1740,79 @@
 
     function renderTestcaseEditor() {
       const problem = getCurrentProblem();
+      if (!problem) {
+        return;
+      }
+
+      const isMatrix = problem.kind === "matrix-multiplication";
+      const canRun = problem.supportsRun;
+      const canCompile = problem.supportsCudaCompile;
       const matrixDims = document.getElementById("matrix-dims");
       const testcaseHelp = document.getElementById("testcase-help");
+      const inputA = document.getElementById("input-a");
+      const inputB = document.getElementById("input-b");
+      const matrixM = document.getElementById("matrix-m");
+      const matrixN = document.getElementById("matrix-n");
+      const matrixK = document.getElementById("matrix-k");
+      const resetButton = document.getElementById("reset-button");
+      const runButton = document.getElementById("run-button");
+      const fileInput = document.getElementById("cuda-file");
+      const sourceEditor = document.getElementById("cuda-source");
+      const compileButton = document.getElementById("compile-button");
+      const sourceResetButton = document.getElementById("source-reset-button");
 
       document.getElementById("input-a-label").textContent =
-        problem.kind === "vector-add" ? "Vector A" : "Matrix A (row-major)";
+        problem.kind === "vector-add"
+          ? "Vector A"
+          : isMatrix
+            ? "Matrix A (row-major)"
+            : "Input A";
       document.getElementById("input-b-label").textContent =
-        problem.kind === "vector-add" ? "Vector B" : "Matrix B (row-major)";
+        problem.kind === "vector-add"
+          ? "Vector B"
+          : isMatrix
+            ? "Matrix B (row-major)"
+            : "Input B";
 
-      document.getElementById("input-a").placeholder =
-        problem.kind === "vector-add" ? "1.0, 2.0, 3.0" : "1.0, 2.0, 3.0, 4.0";
-      document.getElementById("input-b").placeholder =
-        problem.kind === "vector-add" ? "4.0, 5.0, 6.0" : "5.0, 6.0, 7.0, 8.0";
+      inputA.placeholder = canRun
+        ? (problem.kind === "vector-add" ? "1.0, 2.0, 3.0" : isMatrix ? "1.0, 2.0, 3.0, 4.0" : "Input A")
+        : "Browser judge is not available for this challenge.";
+      inputB.placeholder = canRun
+        ? (problem.kind === "vector-add" ? "4.0, 5.0, 6.0" : isMatrix ? "5.0, 6.0, 7.0, 8.0" : "Input B")
+        : "Browser judge is not available for this challenge.";
 
-      matrixDims.hidden = problem.kind !== "matrix-multiplication";
+      inputA.disabled = !canRun;
+      inputB.disabled = !canRun;
+      matrixDims.hidden = !isMatrix;
+      matrixM.disabled = !canRun || !isMatrix;
+      matrixN.disabled = !canRun || !isMatrix;
+      matrixK.disabled = !canRun || !isMatrix;
+
+      fileInput.disabled = !canCompile;
+      sourceEditor.disabled = !canCompile;
+      compileButton.disabled = !canCompile;
+      sourceResetButton.disabled = !canCompile;
+      sourceEditor.placeholder = canCompile
+        ? "Paste or load a .cu submission here."
+        : "This challenge does not have a browser CUDA compile flow yet.";
+
+      resetButton.disabled = !canRun || problem.examples.length === 0;
+      runButton.disabled = true;
       testcaseHelp.textContent = problem.testcaseHelp;
     }
 
     function resetSourceEditor(pushMessage = true) {
       const editor = document.getElementById("cuda-source");
-      if (!editor) {
+      const problem = getCurrentProblem();
+      if (!editor || !problem) {
         return;
       }
 
-      editor.value = getCurrentProblem().starterCode;
+      editor.value = problem.starterCode;
       if (pushMessage) {
-        pushLog("Reset the CUDA editor to the starter code.", "runtime");
+        pushLog(problem.supportsCudaCompile
+          ? "Reset the CUDA editor to the starter code."
+          : "This challenge does not expose a starter .cu file in the browser catalog.", problem.supportsCudaCompile ? "runtime" : "stderr");
       }
     }
 
@@ -1436,14 +1842,23 @@
     function renderKernelMetadata() {
       const select = document.getElementById("kernel-select");
       const meta = document.getElementById("kernel-meta");
-      meta.innerHTML = "";
+      const problem = getCurrentProblem();
+      if (!select || !meta || !problem) {
+        return;
+      }
 
+      meta.innerHTML = "";
       if (!ensureRuntime()) {
         return;
       }
 
       if (select.selectedIndex < 0) {
-        meta.innerHTML = '<li class="meta-item">No kernel metadata yet. Compile a valid CUDA submission first.</li>';
+        const item = document.createElement("li");
+        item.className = "meta-item";
+        item.textContent = problem.supportsCudaCompile
+          ? "No kernel metadata yet. Compile a valid CUDA submission first."
+          : "Kernel metadata is unavailable because browser compilation is disabled for this challenge.";
+        meta.appendChild(item);
         return;
       }
 
@@ -1474,8 +1889,38 @@
       const summary = document.getElementById("result-summary");
       const list = document.getElementById("result-list");
       const vector = document.getElementById("result-vector");
-      summary.innerHTML = '<span class="pill">Waiting for a run</span>';
+      const problem = getCurrentProblem();
+      if (!summary || !list || !vector) {
+        return;
+      }
+
+      summary.innerHTML = "";
       list.innerHTML = "";
+
+      if (!problem) {
+        summary.innerHTML = '<span class="pill">Waiting for catalog</span>';
+        vector.textContent = "Result panel is waiting for the problem catalog to load.";
+        return;
+      }
+
+      if (!problem.supportsRun) {
+        const pill = document.createElement("span");
+        pill.className = `pill ${problem.statusClass}`;
+        pill.textContent = problem.statusLabel;
+        summary.appendChild(pill);
+
+        const item = document.createElement("li");
+        item.className = "result-item";
+        item.innerHTML = `<strong>Browser judge unavailable</strong>${problem.resultSubtitle}`;
+        list.appendChild(item);
+
+        vector.textContent = problem.supportsCudaCompile
+          ? "You can still compile a .cu submission and inspect the generated PTX plus detected kernel signature."
+          : "This challenge is currently available as a statement-only catalog entry in the browser.";
+        return;
+      }
+
+      summary.innerHTML = '<span class="pill">Waiting for a run</span>';
       vector.textContent = "C = [ waiting for a run ]";
     }
 
@@ -1584,7 +2029,8 @@
     }
 
     function loadPTXProgram(ptxText, label) {
-      if (!ensureRuntime()) {
+      const problem = getCurrentProblem();
+      if (!problem || !ensureRuntime()) {
         return false;
       }
 
@@ -1598,7 +2044,7 @@
         return false;
       }
 
-      loadedProgramProblemId = getCurrentProblem().id;
+      loadedProgramProblemId = problem.id;
 
       const entryCount = window.Module.ccall("ptxvm_get_entry_count", "number", [], []);
       const select = document.getElementById("kernel-select");
@@ -1612,11 +2058,16 @@
       }
 
       select.disabled = entryCount === 0;
-      document.getElementById("run-button").disabled = entryCount === 0;
+      document.getElementById("run-button").disabled = entryCount === 0 || !problem.supportsRun;
 
       renderKernelMetadata();
       renderEmptyState();
       pushLog(`Loaded generated PTX from ${label}.`, "runtime");
+
+      if (!problem.supportsRun) {
+        pushLog("This challenge is marked as compile-only in the browser, so Run Judge remains disabled.", "runtime");
+      }
+
       return true;
     }
 
@@ -1636,6 +2087,16 @@
     }
 
     async function compileCurrentSource() {
+      const problem = getCurrentProblem();
+      if (!problem) {
+        return;
+      }
+
+      if (!problem.supportsCudaCompile) {
+        pushLog("This challenge does not currently support browser CUDA compilation.", "stderr");
+        return;
+      }
+
       if (!ensureRuntime()) {
         return;
       }
@@ -1675,6 +2136,10 @@
 
     function ensureProgramMatchesCurrentProblem() {
       const problem = getCurrentProblem();
+      if (!problem) {
+        return false;
+      }
+
       if (loadedProgramProblemId !== problem.id) {
         pushLog("This PTX was compiled for a different problem selection. Recompile before running the judge.", "stderr");
         return false;
@@ -1803,6 +2268,15 @@
 
     function runSelectedProblem() {
       const problem = getCurrentProblem();
+      if (!problem) {
+        return;
+      }
+
+      if (!problem.supportsRun) {
+        pushLog("The selected challenge does not have a browser judge implementation yet.", "stderr");
+        return;
+      }
+
       if (problem.kind === "matrix-multiplication") {
         runMatrixMultiplication();
         return;
@@ -1812,16 +2286,9 @@
     }
 
     window.addEventListener("DOMContentLoaded", () => {
-      renderProblemList();
-      renderStatement();
-      renderExamples();
-      renderExampleButtons();
-      renderTestcaseEditor();
       setupTabs();
-      useExample(currentExampleIndex, false);
-      resetSourceEditor(false);
-      clearLoadedProgramState();
-      setGeneratedPTX("");
+      initializeCatalog();
+      selectProblem(0, false);
 
       document.getElementById("cuda-file").addEventListener("change", handleCudaFileChange);
       document.getElementById("compile-button").addEventListener("click", compileCurrentSource);
@@ -1829,11 +2296,6 @@
       document.getElementById("kernel-select").addEventListener("change", renderKernelMetadata);
       document.getElementById("run-button").addEventListener("click", runSelectedProblem);
       document.getElementById("reset-button").addEventListener("click", () => useExample(0));
-
-      renderEmptyState();
-      ensureCompilerReady().catch((error) => {
-        pushLog(`Compiler bootstrap failed: ${error.message}`, "stderr");
-      });
     });
   </script>
   <script src="ptx_web.js"></script>
