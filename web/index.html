@@ -135,6 +135,30 @@
       gap: 18px;
       position: relative;
       z-index: 1;
+      transition: width 180ms ease, grid-template-columns 180ms ease;
+    }
+
+    .app-shell.editor-focus {
+      width: min(1880px, calc(100vw - 24px));
+      grid-template-columns: 1fr;
+    }
+
+    .app-shell.editor-focus .rail,
+    .app-shell.editor-focus .problem-pane {
+      display: none;
+    }
+
+    .app-shell.editor-focus .workspace {
+      grid-template-columns: 1fr;
+      min-height: calc(100vh - 120px);
+    }
+
+    .app-shell.editor-focus .judge-pane {
+      gap: 16px;
+    }
+
+    .app-shell.editor-focus .source-editor {
+      min-height: clamp(420px, 64vh, 960px);
     }
 
     .rail {
@@ -269,6 +293,21 @@
     .badge.accent {
       background: rgba(88, 166, 255, 0.14);
       color: #a5d6ff;
+    }
+
+    .mode-toggle {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(88, 166, 255, 0.10);
+      color: #a5d6ff;
+      border: 1px solid rgba(88, 166, 255, 0.20);
+      box-shadow: inset 0 0 0 1px rgba(88, 166, 255, 0.04);
+    }
+
+    .mode-toggle.active {
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      color: #ffffff;
+      box-shadow: 0 12px 26px rgba(47, 129, 247, 0.20);
     }
 
     .pill.accent {
@@ -781,7 +820,7 @@
     </div>
   </header>
 
-  <div class="app-shell">
+  <div id="app-shell" class="app-shell">
     <aside class="rail">
       <section class="card">
         <div class="card-body">
@@ -872,7 +911,7 @@
               <h2>Submit CUDA</h2>
               <p class="judge-subtle">Load or edit a .cu file, compile it to PTX in-browser, then choose the detected entry kernel.</p>
             </div>
-            <span class="badge accent">BarraCUDA + PTX VM</span>
+            <button id="editor-focus-toggle" class="mode-toggle" type="button" aria-pressed="false">Focus</button>
           </header>
           <div class="judge-body">
             <div class="field-grid">
@@ -1089,9 +1128,63 @@ extern "C" __global__ void solve(const float* A, const float* B, float* C, int M
     let loadedProgramProblemId = null;
     let barraModule = null;
     let barraModulePromise = null;
+    let editorFocusEnabled = false;
 
     function getCurrentProblem() {
       return PROBLEMS[currentProblemIndex] || null;
+    }
+
+    function setEditorFocus(enabled, pushMessage = true) {
+      editorFocusEnabled = Boolean(enabled);
+
+      const appShell = document.getElementById("app-shell");
+      const toggle = document.getElementById("editor-focus-toggle");
+      if (!appShell || !toggle) {
+        return;
+      }
+
+      appShell.classList.toggle("editor-focus", editorFocusEnabled);
+      toggle.classList.toggle("active", editorFocusEnabled);
+      toggle.textContent = editorFocusEnabled ? "Unfocus" : "Focus";
+      toggle.setAttribute("aria-pressed", String(editorFocusEnabled));
+      toggle.setAttribute(
+        "title",
+        editorFocusEnabled
+          ? "Exit editor focus mode and restore the full three-panel layout."
+          : "Hide the catalog and statement panes so the code editor can use the full width."
+      );
+
+      try {
+        window.localStorage.setItem("ptx-judge-editor-focus", editorFocusEnabled ? "1" : "0");
+      } catch (error) {
+        // Ignore storage failures in private browsing or restrictive environments.
+      }
+
+      if (editorFocusEnabled) {
+        document.getElementById("cuda-source")?.focus();
+      }
+
+      if (pushMessage) {
+        pushLog(
+          editorFocusEnabled
+            ? "Editor focus mode enabled. The catalog and statement panes are now hidden."
+            : "Editor focus mode disabled. The full layout is visible again.",
+          "runtime"
+        );
+      }
+    }
+
+    function toggleEditorFocus() {
+      setEditorFocus(!editorFocusEnabled, true);
+    }
+
+    function restoreEditorFocusPreference() {
+      try {
+        const saved = window.localStorage.getItem("ptx-judge-editor-focus");
+        setEditorFocus(saved === "1", false);
+      } catch (error) {
+        setEditorFocus(false, false);
+      }
     }
 
     function cloneJson(value) {
@@ -2287,15 +2380,23 @@ extern "C" __global__ void solve(const float* A, const float* B, float* C, int M
 
     window.addEventListener("DOMContentLoaded", () => {
       setupTabs();
+      restoreEditorFocusPreference();
       initializeCatalog();
       selectProblem(0, false);
 
       document.getElementById("cuda-file").addEventListener("change", handleCudaFileChange);
       document.getElementById("compile-button").addEventListener("click", compileCurrentSource);
+      document.getElementById("editor-focus-toggle").addEventListener("click", toggleEditorFocus);
       document.getElementById("source-reset-button").addEventListener("click", () => resetSourceEditor(true));
       document.getElementById("kernel-select").addEventListener("change", renderKernelMetadata);
       document.getElementById("run-button").addEventListener("click", runSelectedProblem);
       document.getElementById("reset-button").addEventListener("click", () => useExample(0));
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && editorFocusEnabled) {
+          setEditorFocus(false, true);
+        }
+      });
     });
   </script>
   <script src="ptx_web.js"></script>
