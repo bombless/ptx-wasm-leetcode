@@ -1273,6 +1273,57 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
             expected: 0.0
           }
         ]
+      },
+      5: {
+        kind: "softmax",
+        supportsRun: true,
+        supportsCudaCompile: true,
+        judgeContract:
+          "The browser judge expects a PTX entry kernel with one input pointer, one output pointer, and one 32-bit length N. For browser compatibility, write the entire softmax output array directly inside a single extern \"C\" __global__ solve kernel.",
+        submissionHint:
+          "The Starter Code tab shows the official LeetGPU CUDA starter. For the browser compiler, submit a single extern \"C\" __global__ entry kernel that computes the result directly in solve.",
+        testcaseHint:
+          "Paste one float array. The judge compares the output array against a CPU softmax reference that uses the max trick for numerical stability.",
+        testcaseHelp:
+          "Input array must contain N floats. The browser judge validates the full output array with a small tolerance against a CPU softmax implementation.",
+        resultTitle: "Softmax Output",
+        resultSubtitle:
+          "The final probabilities must be stored in the output array. The judge compares them to a CPU softmax reference.",
+        signatureHint: `extern "C" __global__ void solve(const float* input, float* output, int N) {`,
+        editorStarterCode: `#include <cuda_runtime.h>
+#include <math.h>
+
+extern "C" __global__ void solve(const float* input, float* output, int N) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        float maxValue = input[0];
+        for (int i = 1; i < N; i = i + 1) {
+            // TODO: update maxValue using input[i].
+        }
+
+        float sum = 0.0f;
+        for (int i = 0; i < N; i = i + 1) {
+            // TODO: compute expf(input[i] - maxValue), store it in output[i],
+            // and accumulate the normalization sum.
+        }
+
+        for (int i = 0; i < N; i = i + 1) {
+            // TODO: normalize output[i] by the final sum.
+        }
+    }
+}
+`,
+        examples: [
+          {
+            label: "Example 1",
+            inputA: [1.0, 2.0, 3.0],
+            expected: [0.090031, 0.244728, 0.665241]
+          },
+          {
+            label: "Example 2",
+            inputA: [1000.0, 1001.0, 1002.0],
+            expected: [0.090031, 0.244728, 0.665241]
+          }
+        ]
       }
     };
 
@@ -1484,6 +1535,7 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
         unsupportedReason: reason,
         specHtml: `<p>${reason}</p>`,
         starterCode: "",
+        editorStarterCode: "",
         signatureHint: "",
         examples: [],
         judgeContract: reason,
@@ -1510,6 +1562,7 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
         unsupportedReason: entry.unsupportedReason || "",
         specHtml: entry.specHtml || "<p>No challenge description is available.</p>",
         starterCode: typeof entry.starterCode === "string" ? entry.starterCode : "",
+        editorStarterCode: typeof entry.editorStarterCode === "string" ? entry.editorStarterCode : "",
         signatureHint: entry.signatureHint || "",
         examples: Array.isArray(entry.examples) ? cloneJson(entry.examples) : [],
         judgeContract: entry.judgeContract || "",
@@ -1571,6 +1624,7 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
 
     function finalizeProblem(problem) {
       const starterCode = typeof problem.starterCode === "string" ? problem.starterCode : "";
+      const editorStarterCode = typeof problem.editorStarterCode === "string" ? problem.editorStarterCode : "";
       const finalized = {
         id: zeroPad(problem.numericId),
         numericId: problem.numericId,
@@ -1580,10 +1634,11 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
         available: problem.available !== false,
         kind: problem.kind || "metadata-only",
         supportsRun: Boolean(problem.supportsRun),
-        supportsCudaCompile: Boolean(problem.supportsCudaCompile && starterCode.trim()),
+        supportsCudaCompile: Boolean(problem.supportsCudaCompile && (starterCode.trim() || editorStarterCode.trim())),
         unsupportedReason: problem.unsupportedReason || "",
         specHtml: problem.specHtml || "<p>No challenge description is available.</p>",
         starterCode,
+        editorStarterCode,
         signatureHint: problem.signatureHint || extractSignatureHint(starterCode),
         examples: Array.isArray(problem.examples) ? cloneJson(problem.examples) : [],
         judgeContract:
@@ -1804,6 +1859,25 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
         sum += value;
       }
       return sum;
+    }
+
+    function buildSoftmaxExpected(inputA) {
+      let maxValue = inputA[0];
+      for (let i = 1; i < inputA.length; i += 1) {
+        if (inputA[i] > maxValue) {
+          maxValue = inputA[i];
+        }
+      }
+
+      const exponents = new Array(inputA.length);
+      let sum = 0.0;
+      for (let i = 0; i < inputA.length; i += 1) {
+        const value = Math.exp(inputA[i] - maxValue);
+        exponents[i] = value;
+        sum += value;
+      }
+
+      return exponents.map((value) => value / sum);
     }
 
     function arraysAlmostEqual(actual, expected, tolerance = 1e-4) {
@@ -2073,6 +2147,11 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
             <span class="vector-line">        B = ${formatVector(example.inputB)}</span>
             <span class="vector-line">Output: C = ${formatVector(example.expected)}</span>
           `;
+        } else if (problem.kind === "softmax") {
+          bodyHtml = `
+            <span class="vector-line">Input:  x = ${formatVector(example.inputA)}</span>
+            <span class="vector-line">Output: output = ${formatVector(example.expected)}</span>
+          `;
         } else if (problem.kind === "reduction") {
           bodyHtml = `
             <span class="vector-line">Input:  X = ${formatVector(example.inputA)}</span>
@@ -2168,7 +2247,7 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
       document.getElementById("input-a-label").textContent =
         problem.kind === "vector-add"
           ? "Vector A"
-          : problem.kind === "reduction"
+          : (problem.kind === "reduction" || problem.kind === "softmax")
             ? "Input Array"
           : isMatrixMultiply
             ? "Matrix A (row-major)"
@@ -2190,7 +2269,7 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
       inputA.placeholder = canRun
         ? (problem.kind === "vector-add"
           ? "1.0, 2.0, 3.0"
-          : problem.kind === "reduction"
+          : (problem.kind === "reduction" || problem.kind === "softmax")
             ? "1.0, 2.0, 3.0, 4.0"
           : isMatrixMultiply
             ? "1.0, 2.0, 3.0, 4.0"
@@ -2232,7 +2311,7 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
         return;
       }
 
-      setCudaSourceValue(problem.starterCode);
+      setCudaSourceValue(problem.editorStarterCode || problem.starterCode);
       if (pushMessage) {
         pushLog(problem.supportsCudaCompile
           ? "Reset the CUDA editor to the starter code."
@@ -2347,6 +2426,8 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
       summary.innerHTML = '<span class="pill">Waiting for a run</span>';
       if (problem.kind === "matrix-transpose") {
         vector.textContent = "A^T = [ waiting for a run ]";
+      } else if (problem.kind === "softmax") {
+        vector.textContent = "output = [ waiting for a run ]";
       } else if (problem.kind === "reduction") {
         vector.textContent = "output[0] = [ waiting for a run ]";
       } else {
@@ -2499,6 +2580,43 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
       item.className = "result-item";
       item.innerHTML = `<strong>Reduction Result</strong>actual=${formatNumber(actual)}, expected=${formatNumber(expected)}`;
       list.appendChild(item);
+    }
+
+    function renderSoftmaxResults(inputA, output) {
+      const summary = document.getElementById("result-summary");
+      const list = document.getElementById("result-list");
+      const vector = document.getElementById("result-vector");
+      summary.innerHTML = "";
+      list.innerHTML = "";
+
+      const expected = buildSoftmaxExpected(inputA);
+      const allMatch = arraysAlmostEqual(output, expected, 5e-3);
+      const outputSum = output.reduce((acc, value) => acc + value, 0.0);
+
+      const status = document.createElement("span");
+      status.className = `pill ${allMatch ? "good" : "warn"}`;
+      status.textContent = allMatch ? "Accepted" : "Wrong Answer";
+
+      const count = document.createElement("span");
+      count.className = "pill";
+      count.textContent = `Elements: ${output.length}`;
+
+      const sumBadge = document.createElement("span");
+      sumBadge.className = "pill";
+      sumBadge.textContent = `Sum(output) = ${formatNumber(outputSum)}`;
+
+      summary.appendChild(status);
+      summary.appendChild(count);
+      summary.appendChild(sumBadge);
+
+      vector.textContent = `output = ${formatVector(output)}`;
+
+      for (let i = 0; i < output.length; i += 1) {
+        const item = document.createElement("li");
+        item.className = "result-item";
+        item.innerHTML = `<strong>output[${i}] = ${formatNumber(output[i])}</strong>expected=${formatNumber(expected[i])}, input=${formatNumber(inputA[i])}`;
+        list.appendChild(item);
+      }
     }
 
     function ensureModuleWorkspace(module) {
@@ -2866,6 +2984,50 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
       }
     }
 
+    function runSoftmax() {
+      if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
+        return;
+      }
+
+      const inputA = parseFloatList(document.getElementById("input-a").value);
+      if (inputA.length === 0) {
+        pushLog("Input array must contain at least one float.", "stderr");
+        return;
+      }
+
+      const kernelName = document.getElementById("kernel-select").value;
+      const inputABytes = inputA.length * Float32Array.BYTES_PER_ELEMENT;
+      const inputAPtr = window.Module._malloc(inputABytes);
+
+      try {
+        window.Module.HEAPF32.set(inputA, inputAPtr >> 2);
+
+        const ok = window.Module.ccall(
+          "ptxvm_run_softmax",
+          "number",
+          ["string", "number", "number"],
+          [kernelName, inputAPtr, inputA.length]
+        );
+
+        if (!ok) {
+          const error = window.Module.ccall("ptxvm_get_last_error", "string", [], []);
+          pushLog(error || "Kernel execution failed.", "stderr");
+          return;
+        }
+
+        const resultCount = window.Module.ccall("ptxvm_get_result_count", "number", [], []);
+        const output = [];
+        for (let i = 0; i < resultCount; i += 1) {
+          output.push(window.Module.ccall("ptxvm_get_result_value", "number", ["number"], [i]));
+        }
+
+        renderSoftmaxResults(inputA, output);
+        pushLog(`Judge finished running kernel ${kernelName}.`, "runtime");
+      } finally {
+        window.Module._free(inputAPtr);
+      }
+    }
+
     function runSelectedProblem() {
       const problem = getCurrentProblem();
       if (!problem) {
@@ -2889,6 +3051,11 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
 
       if (problem.kind === "reduction") {
         runReduction();
+        return;
+      }
+
+      if (problem.kind === "softmax") {
+        runSoftmax();
         return;
       }
 

@@ -43,6 +43,7 @@ enum class InstructionTypes {
     NEG_F32, NEG_F64,
     ABS_F32, ABS_F64,
     FMA_F32, FMA_F64,     // Fused multiply-add
+    EX2_F32,              // Base-2 exponential
     SQRT_F32, SQRT_F64,   // Square root
     RSQRT_F32, RSQRT_F64, // Reciprocal square root
     MIN_F32, MIN_F64,

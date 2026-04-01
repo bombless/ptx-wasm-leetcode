@@ -661,6 +661,8 @@ public:
                 return executeDIV_F32(instr);
             case InstructionTypes::FMA_F32:
                 return executeFMA_F32(instr);
+            case InstructionTypes::EX2_F32:
+                return executeEX2_F32(instr);
             case InstructionTypes::SQRT_F32:
                 return executeSQRT_F32(instr);
             case InstructionTypes::NEG_F32:
@@ -1614,7 +1616,24 @@ public:
         m_currentInstructionIndex++;
         return true;
     }
-    
+
+    // Execute EX2.F32 instruction
+    bool executeEX2_F32(const DecodedInstruction& instr) {
+        if (instr.dest.type != OperandType::REGISTER || instr.sources.size() != 1) {
+            std::cerr << "Invalid EX2.F32 instruction format" << std::endl;
+            m_currentInstructionIndex++;
+            return true;
+        }
+
+        float src = m_registerBank->readFloatRegister(instr.sources[0].registerIndex);
+        float result = std::exp2(src);
+        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
+
+        m_currentInstructionIndex++;
+        return true;
+    }
+
     // Execute SQRT.F32 instruction
     bool executeSQRT_F32(const DecodedInstruction& instr) {
         if (instr.dest.type != OperandType::REGISTER || instr.sources.size() != 1) {

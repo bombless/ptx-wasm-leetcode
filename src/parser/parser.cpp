@@ -692,6 +692,10 @@ InstructionTypes PTXParser::Impl::opcodeToInstructionType(const std::string &opc
         if (isF64) return InstructionTypes::FMA_F64;
         return InstructionTypes::MAX_INSTRUCTION_TYPE;
     }
+    if (opcode == "ex2") {
+        if (isF32) return InstructionTypes::EX2_F32;
+        return InstructionTypes::MAX_INSTRUCTION_TYPE;
+    }
     if (opcode == "sqrt") {
         if (isF32) return InstructionTypes::SQRT_F32;
         if (isF64) return InstructionTypes::SQRT_F64;
