@@ -881,7 +881,7 @@
           <div class="eyebrow">Problem Set</div>
           <h2>LeetGPU Browser Catalog</h2>
           <p class="muted">
-            左边是 1 到 74 题的题库目录。当前浏览器 judge 已支持第 1 题到第 7 题完整运行，我正在继续把后面的题一题一题补成可编译、可运行、可判题的版本。
+            左边是 1 到 74 题的题库目录。当前浏览器 judge 已支持第 1 题到第 8 题完整运行，我正在继续把后面的题一题一题补成可编译、可运行、可判题的版本。
           </p>
           <ul id="problem-list" class="problem-list"></ul>
         </div>
@@ -1028,12 +1028,12 @@
               </div>
 
               <div id="matrix-dims" class="dimension-grid" hidden>
-                <div class="field">
+                <div id="matrix-m-field" class="field">
                   <label id="matrix-m-label" for="matrix-m">Rows M</label>
                   <input id="matrix-m" type="number" min="1" step="1" />
                 </div>
 
-                <div class="field">
+                <div id="matrix-n-field" class="field">
                   <label id="matrix-n-label" for="matrix-n">Shared N</label>
                   <input id="matrix-n" type="number" min="1" step="1" />
                 </div>
@@ -1473,6 +1473,51 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
             height: 1,
             inputA: [10, 20, 30, 255, 100, 150, 200, 255],
             expected: [245, 235, 225, 255, 155, 105, 55, 255]
+          }
+        ]
+      },
+      8: {
+        kind: "matrix-addition",
+        supportsRun: true,
+        supportsCudaCompile: true,
+        judgeContract:
+          "The browser judge expects a PTX entry kernel with three pointer parameters plus one 32-bit matrix size N. It treats A and B as flattened N x N row-major matrices and validates that matrix C matches a CPU reference.",
+        submissionHint:
+          "The Starter Code tab shows the official LeetGPU CUDA starter. For the browser compiler, submit a single extern \"C\" __global__ solve kernel that writes the full flattened N x N result directly in solve.",
+        testcaseHint:
+          "Paste row-major float arrays for A and B, then provide the square matrix size N.",
+        testcaseHelp:
+          "Matrix A and Matrix B must each contain N x N floats in row-major order. The browser judge compares the full output matrix against a CPU matrix-addition reference.",
+        resultTitle: "Output Matrix C",
+        resultSubtitle:
+          "The final result must be stored in matrix C. The judge compares it to a CPU row-major matrix-addition result.",
+        signatureHint: `extern "C" __global__ void solve(const float* A, const float* B, float* C, int N) {`,
+        editorStarterCode: `#include <cuda_runtime.h>
+
+extern "C" __global__ void solve(const float* A, const float* B, float* C, int N) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        int total = N * N;
+        for (int idx = 0; idx < total; idx = idx + 1) {
+            // TODO: write the flattened matrix sum into C[idx].
+            // C[idx] = A[idx] + B[idx];
+        }
+    }
+}
+`,
+        examples: [
+          {
+            label: "Example 1",
+            matrixSize: 2,
+            inputA: [1.0, 2.0, 3.0, 4.0],
+            inputB: [5.0, 6.0, 7.0, 8.0],
+            expected: [6.0, 8.0, 10.0, 12.0]
+          },
+          {
+            label: "Example 2",
+            matrixSize: 3,
+            inputA: [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5],
+            inputB: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            expected: [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
           }
         ]
       }
@@ -2019,6 +2064,10 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
       return result;
     }
 
+    function buildMatrixAdditionExpected(inputA, inputB) {
+      return inputA.map((value, index) => value + inputB[index]);
+    }
+
     function buildMatrixTransposeExpected(inputA, rows, cols) {
       const result = new Array(rows * cols).fill(0);
 
@@ -2223,6 +2272,10 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
         document.getElementById("matrix-m").value = String(example.rowsM);
         document.getElementById("matrix-n").value = String(example.sharedN);
         document.getElementById("matrix-k").value = String(example.colsK);
+      } else if (problem.kind === "matrix-addition") {
+        document.getElementById("matrix-m").value = String(example.matrixSize);
+        document.getElementById("matrix-n").value = "";
+        document.getElementById("matrix-k").value = "";
       } else if (problem.kind === "color-inversion") {
         document.getElementById("matrix-m").value = String(example.width);
         document.getElementById("matrix-n").value = String(example.height);
@@ -2376,6 +2429,12 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
             <span class="vector-line">        B = ${formatVector(example.inputB)}</span>
             <span class="vector-line">Output: C = ${formatVector(example.expected)}</span>
           `;
+        } else if (problem.kind === "matrix-addition") {
+          bodyHtml = `
+            <span class="vector-line">Input:  A (${example.matrixSize} x ${example.matrixSize}) = ${formatMatrixInline(example.inputA, example.matrixSize, example.matrixSize)}</span>
+            <span class="vector-line">        B (${example.matrixSize} x ${example.matrixSize}) = ${formatMatrixInline(example.inputB, example.matrixSize, example.matrixSize)}</span>
+            <span class="vector-line">Output: C (${example.matrixSize} x ${example.matrixSize}) = ${formatMatrixInline(example.expected, example.matrixSize, example.matrixSize)}</span>
+          `;
         } else if (problem.kind === "softmax-attention") {
           bodyHtml = `
             <span class="vector-line">Input:  Q (${example.rowsM} x ${example.colsK}) = ${formatMatrixInline(example.inputA, example.rowsM, example.colsK)}</span>
@@ -2465,14 +2524,16 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
 
       const usesSecondInput =
         problem.kind === "vector-add" ||
+        problem.kind === "matrix-addition" ||
         problem.kind === "matrix-multiplication" ||
         problem.kind === "softmax-attention";
       const usesThirdInput = problem.kind === "softmax-attention";
       const isColorInversion = problem.kind === "color-inversion";
+      const isMatrixAddition = problem.kind === "matrix-addition";
       const isMatrixMultiply = problem.kind === "matrix-multiplication";
       const isTranspose = problem.kind === "matrix-transpose";
       const isAttention = problem.kind === "softmax-attention";
-      const usesMatrixDims = isMatrixMultiply || isTranspose || isAttention || isColorInversion;
+      const usesMatrixDims = isMatrixAddition || isMatrixMultiply || isTranspose || isAttention || isColorInversion;
       const canRun = problem.supportsRun;
       const canCompile = problem.supportsCudaCompile;
       const matrixDims = document.getElementById("matrix-dims");
@@ -2485,6 +2546,8 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
       const matrixM = document.getElementById("matrix-m");
       const matrixN = document.getElementById("matrix-n");
       const matrixK = document.getElementById("matrix-k");
+      const matrixMField = document.getElementById("matrix-m-field");
+      const matrixNField = document.getElementById("matrix-n-field");
       const matrixKField = document.getElementById("matrix-k-field");
       const matrixMLabel = document.getElementById("matrix-m-label");
       const matrixNLabel = document.getElementById("matrix-n-label");
@@ -2504,6 +2567,8 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
             ? "Input Array"
           : isAttention
             ? "Matrix Q (row-major)"
+          : isMatrixAddition
+            ? "Matrix A (row-major)"
           : isMatrixMultiply
             ? "Matrix A (row-major)"
             : isTranspose
@@ -2514,6 +2579,8 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
           ? "Vector B"
           : isAttention
             ? "Matrix K (row-major)"
+          : isMatrixAddition
+            ? "Matrix B (row-major)"
           : isMatrixMultiply
             ? "Matrix B (row-major)"
             : isTranspose
@@ -2522,7 +2589,7 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
       document.getElementById("input-c-label").textContent =
         isAttention ? "Matrix V (row-major)" : "Input C";
 
-      matrixMLabel.textContent = isColorInversion ? "Width" : isTranspose ? "Input Rows" : "Rows M";
+      matrixMLabel.textContent = isColorInversion ? "Width" : isTranspose ? "Input Rows" : isMatrixAddition ? "Matrix N" : "Rows M";
       matrixNLabel.textContent = isColorInversion ? "Height" : isTranspose ? "Input Cols" : isAttention ? "Keys N" : "Shared N";
       matrixKLabel.textContent = isAttention ? "Feature d" : "Cols K";
 
@@ -2535,6 +2602,8 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
             ? "1.0, 2.0, 3.0, 4.0"
           : isAttention
             ? "1.0, 0.0, 0.0, 0.0"
+          : isMatrixAddition
+            ? "1.0, 2.0, 3.0, 4.0"
           : isMatrixMultiply
             ? "1.0, 2.0, 3.0, 4.0"
             : isTranspose
@@ -2546,6 +2615,8 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
           ? "4.0, 5.0, 6.0"
           : isAttention
             ? "1.0, 0.0, 0.0, 0.0"
+            : isMatrixAddition
+              ? "5.0, 6.0, 7.0, 8.0"
             : isMatrixMultiply
               ? "5.0, 6.0, 7.0, 8.0"
               : "")
@@ -2560,10 +2631,12 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
       inputBField.hidden = !usesSecondInput;
       inputCField.hidden = !usesThirdInput;
       matrixDims.hidden = !usesMatrixDims;
+      matrixMField.hidden = !usesMatrixDims;
+      matrixNField.hidden = !(isMatrixMultiply || isTranspose || isAttention || isColorInversion);
       matrixKField.hidden = !(isMatrixMultiply || isAttention);
       matrixM.disabled = !canRun || !usesMatrixDims;
-      matrixN.disabled = !canRun || !usesMatrixDims;
-      matrixK.disabled = !canRun || !(isMatrixMultiply || isAttention);
+      matrixN.disabled = !canRun || matrixNField.hidden;
+      matrixK.disabled = !canRun || matrixKField.hidden;
 
       fileInput.disabled = !canCompile;
       setCudaSourceEditorDisabled(!canCompile);
@@ -2781,6 +2854,44 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
       const actualRows = buildMatrixRows(output, rowsM, colsK);
       const expectedRows = buildMatrixRows(expected, rowsM, colsK);
       for (let row = 0; row < rowsM; row += 1) {
+        const item = document.createElement("li");
+        item.className = "result-item";
+        item.innerHTML = `<strong>Row ${row}</strong>actual=${formatVector(actualRows[row])}, expected=${formatVector(expectedRows[row])}`;
+        list.appendChild(item);
+      }
+    }
+
+    function renderMatrixAdditionResults(inputA, inputB, matrixN, output) {
+      const summary = document.getElementById("result-summary");
+      const list = document.getElementById("result-list");
+      const vector = document.getElementById("result-vector");
+      summary.innerHTML = "";
+      list.innerHTML = "";
+
+      const expected = buildMatrixAdditionExpected(inputA, inputB);
+      const allMatch = arraysAlmostEqual(output, expected, 1e-4);
+
+      const status = document.createElement("span");
+      status.className = `pill ${allMatch ? "good" : "warn"}`;
+      status.textContent = allMatch ? "Accepted" : "Wrong Answer";
+
+      const shape = document.createElement("span");
+      shape.className = "pill";
+      shape.textContent = `Shape: ${matrixN} x ${matrixN}`;
+
+      const reference = document.createElement("span");
+      reference.className = "pill";
+      reference.textContent = "Reference: CPU row-major matrix add";
+
+      summary.appendChild(status);
+      summary.appendChild(shape);
+      summary.appendChild(reference);
+
+      vector.textContent = `C = ${formatMatrixMultiline(output, matrixN, matrixN)}`;
+
+      const actualRows = buildMatrixRows(output, matrixN, matrixN);
+      const expectedRows = buildMatrixRows(expected, matrixN, matrixN);
+      for (let row = 0; row < matrixN; row += 1) {
         const item = document.createElement("li");
         item.className = "result-item";
         item.innerHTML = `<strong>Row ${row}</strong>actual=${formatVector(actualRows[row])}, expected=${formatVector(expectedRows[row])}`;
@@ -3247,6 +3358,68 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
       }
     }
 
+    function runMatrixAddition() {
+      if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
+        return;
+      }
+
+      const matrixN = parsePositiveInt(document.getElementById("matrix-m").value);
+      if (matrixN === null) {
+        pushLog("Matrix N must be a positive integer.", "stderr");
+        return;
+      }
+
+      const inputA = parseFloatList(document.getElementById("input-a").value);
+      const inputB = parseFloatList(document.getElementById("input-b").value);
+      const expectedLength = matrixN * matrixN;
+
+      if (inputA.length !== expectedLength) {
+        pushLog("Matrix A length does not match N x N.", "stderr");
+        return;
+      }
+
+      if (inputB.length !== expectedLength) {
+        pushLog("Matrix B length does not match N x N.", "stderr");
+        return;
+      }
+
+      const kernelName = document.getElementById("kernel-select").value;
+      const inputABytes = inputA.length * Float32Array.BYTES_PER_ELEMENT;
+      const inputBBytes = inputB.length * Float32Array.BYTES_PER_ELEMENT;
+      const inputAPtr = window.Module._malloc(inputABytes);
+      const inputBPtr = window.Module._malloc(inputBBytes);
+
+      try {
+        window.Module.HEAPF32.set(inputA, inputAPtr >> 2);
+        window.Module.HEAPF32.set(inputB, inputBPtr >> 2);
+
+        const ok = window.Module.ccall(
+          "ptxvm_run_matrix_addition",
+          "number",
+          ["string", "number", "number", "number", "number", "number"],
+          [kernelName, inputAPtr, inputA.length, inputBPtr, inputB.length, matrixN]
+        );
+
+        if (!ok) {
+          const error = window.Module.ccall("ptxvm_get_last_error", "string", [], []);
+          pushLog(error || "Kernel execution failed.", "stderr");
+          return;
+        }
+
+        const resultCount = window.Module.ccall("ptxvm_get_result_count", "number", [], []);
+        const output = [];
+        for (let i = 0; i < resultCount; i += 1) {
+          output.push(window.Module.ccall("ptxvm_get_result_value", "number", ["number"], [i]));
+        }
+
+        renderMatrixAdditionResults(inputA, inputB, matrixN, output);
+        pushLog(`Judge finished running kernel ${kernelName}.`, "runtime");
+      } finally {
+        window.Module._free(inputAPtr);
+        window.Module._free(inputBPtr);
+      }
+    }
+
     function runMatrixTranspose() {
       if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
         return;
@@ -3526,6 +3699,11 @@ extern "C" __global__ void solve(unsigned char* image, int width, int height) {
 
       if (!problem.supportsRun) {
         pushLog("The selected challenge does not have a browser judge implementation yet.", "stderr");
+        return;
+      }
+
+      if (problem.kind === "matrix-addition") {
+        runMatrixAddition();
         return;
       }
 

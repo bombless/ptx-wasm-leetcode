@@ -237,7 +237,7 @@ if(EMSCRIPTEN)
         "SHELL:-sNO_EXIT_RUNTIME=1"
         "SHELL:-sFORCE_FILESYSTEM=1"
         "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-        "SHELL:-sEXPORTED_FUNCTIONS=['_malloc','_free','_ptxvm_load_program','_ptxvm_get_entry_count','_ptxvm_get_entry_name','_ptxvm_get_param_count','_ptxvm_get_param_name','_ptxvm_get_param_type','_ptxvm_is_param_pointer','_ptxvm_run_vector_add','_ptxvm_run_matrix_multiplication','_ptxvm_run_matrix_transpose','_ptxvm_run_reduction','_ptxvm_run_softmax','_ptxvm_run_softmax_attention','_ptxvm_run_color_inversion','_ptxvm_get_result_count','_ptxvm_get_result_value','_ptxvm_get_last_error']"
+        "SHELL:-sEXPORTED_FUNCTIONS=['_malloc','_free','_ptxvm_load_program','_ptxvm_get_entry_count','_ptxvm_get_entry_name','_ptxvm_get_param_count','_ptxvm_get_param_name','_ptxvm_get_param_type','_ptxvm_is_param_pointer','_ptxvm_run_vector_add','_ptxvm_run_matrix_addition','_ptxvm_run_matrix_multiplication','_ptxvm_run_matrix_transpose','_ptxvm_run_reduction','_ptxvm_run_softmax','_ptxvm_run_softmax_attention','_ptxvm_run_color_inversion','_ptxvm_get_result_count','_ptxvm_get_result_value','_ptxvm_get_last_error']"
         "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS','HEAPF32','HEAPU8']"
     )
 
