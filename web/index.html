@@ -1751,6 +1751,154 @@ extern "C" __global__ void solve(const float* input,
             expected: [36.0]
           }
         ]
+      },
+      12: {
+        kind: "multi-head-attention",
+        supportsRun: true,
+        supportsCudaCompile: true,
+        judgeContract:
+          "The browser judge expects a PTX entry kernel with Q, K, V, and output pointers plus 32-bit N, d_model, and h scalars. For browser compatibility, compute the full multi-head attention output directly inside a single extern \"C\" __global__ solve kernel.",
+        submissionHint:
+          "The Starter Code tab shows the official LeetGPU CUDA starter. For the browser compiler, keep everything inside a single extern \"C\" __global__ solve kernel and prefer a two-pass structure: first find the max score, then accumulate weighted values directly into output before the final normalization pass.",
+        testcaseHint:
+          "Paste row-major float arrays for Q, K, and V, then provide N, d_model, and h.",
+        testcaseHelp:
+          "Q, K, and V must each contain N x d_model floats. The browser judge requires d_model % h == 0 and compares the full output matrix against a CPU multi-head self-attention reference.",
+        resultTitle: "Multi-Head Attention Output",
+        resultSubtitle:
+          "The final result must be stored in the output matrix. The judge compares it to a CPU multi-head self-attention reference.",
+        signatureHint: `extern "C" __global__ void solve(const float* Q, const float* K, const float* V, float* output, int N, int d_model, int h) {`,
+        editorStarterCode: `#include <cuda_runtime.h>
+#include <math.h>
+
+extern "C" __global__ void solve(const float* Q,
+                                 const float* K,
+                                 const float* V,
+                                 float* output,
+                                 int N,
+                                 int d_model,
+                                 int h) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        int d_k = d_model / h;
+
+        for (int row = 0; row < N; row = row + 1) {
+            for (int head = 0; head < h; head = head + 1) {
+                int offset = head * d_k;
+                float maxScore = -3.402823466e+38f;
+                float scale = 1.0f / sqrtf((float)d_k);
+
+                for (int key = 0; key < N; key = key + 1) {
+                    float score = 0.0f;
+                    for (int i = 0; i < d_k; i = i + 1) {
+                        int idx = offset + i;
+                        // TODO: accumulate Q[row * d_model + idx] * K[key * d_model + idx].
+                    }
+                    score = score * scale;
+                    if (score > maxScore) {
+                        maxScore = score;
+                    }
+                }
+
+                for (int col = 0; col < d_k; col = col + 1) {
+                    output[row * d_model + offset + col] = 0.0f;
+                }
+
+                float denom = 0.0f;
+                for (int key = 0; key < N; key = key + 1) {
+                    float score = 0.0f;
+                    for (int i = 0; i < d_k; i = i + 1) {
+                        int idx = offset + i;
+                        // TODO: recompute the score for this key and head.
+                    }
+                    score = score * scale;
+                    float weight = expf(score - maxScore);
+                    denom += weight;
+
+                    for (int col = 0; col < d_k; col = col + 1) {
+                        // TODO: accumulate weight * V[key * d_model + offset + col] into output.
+                    }
+                }
+
+                for (int col = 0; col < d_k; col = col + 1) {
+                    output[row * d_model + offset + col] =
+                        output[row * d_model + offset + col] / denom;
+                }
+            }
+        }
+    }
+}
+`,
+        examples: [
+          {
+            label: "Example 1",
+            sequenceN: 2,
+            modelD: 4,
+            numHeads: 2,
+            inputA: [1.0, 0.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+            inputB: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            inputC: [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
+            expected: [2.388386, 2.888386, 3.499999, 3.999999, 2.5, 3.0, 3.5, 4.0]
+          },
+          {
+            label: "Example 2",
+            sequenceN: 1,
+            modelD: 2,
+            numHeads: 1,
+            inputA: [1.0, 1.0],
+            inputB: [1.0, 1.0],
+            inputC: [2.0, 3.0],
+            expected: [2.0, 3.0]
+          }
+        ]
+      },
+      13: {
+        kind: "histogramming",
+        supportsRun: true,
+        supportsCudaCompile: true,
+        judgeContract:
+          "The browser judge expects a PTX entry kernel with input and histogram pointers plus 32-bit N and num_bins scalars. For browser compatibility, compute the histogram directly inside a single extern \"C\" __global__ solve kernel.",
+        submissionHint:
+          "The Starter Code tab shows the official LeetGPU CUDA starter. For the browser compiler, submit a single extern \"C\" __global__ entry kernel, clear the histogram buffer inside solve, then count each input value into its matching bin.",
+        testcaseHint:
+          "Paste a comma-separated int array for input, then provide num_bins. The browser judge derives N from the input length.",
+        testcaseHelp:
+          "Each input value must be an integer in the range [0, num_bins). The browser judge compares the histogram buffer against a CPU reference histogram.",
+        resultTitle: "Histogram Output",
+        resultSubtitle:
+          "The final result must be stored in the histogram array. The judge compares each bin count to a CPU histogram reference.",
+        signatureHint: `extern "C" __global__ void solve(const int* input, int* histogram, int N, int num_bins) {`,
+        editorStarterCode: `#include <cuda_runtime.h>
+
+extern "C" __global__ void solve(const int* input,
+                                 int* histogram,
+                                 int N,
+                                 int num_bins) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        for (int bin = 0; bin < num_bins; bin = bin + 1) {
+            histogram[bin] = 0;
+        }
+
+        for (int i = 0; i < N; i = i + 1) {
+            int value = input[i];
+            // TODO: increment histogram[value].
+        }
+    }
+}
+`,
+        examples: [
+          {
+            label: "Example 1",
+            inputA: [0, 1, 2, 1, 0],
+            numBins: 3,
+            expected: [2, 2, 1]
+          },
+          {
+            label: "Example 2",
+            inputA: [3, 3, 3, 3],
+            numBins: 5,
+            expected: [0, 0, 0, 4, 0]
+          }
+        ]
       }
     };
 
@@ -2273,6 +2421,24 @@ extern "C" __global__ void solve(const float* input,
         .filter((value) => Number.isFinite(value));
     }
 
+    function parseIntList(text) {
+      const tokens = String(text ?? "")
+        .split(/[\s,]+/)
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+      const values = [];
+      for (const token of tokens) {
+        const value = Number(token);
+        if (!Number.isInteger(value)) {
+          return null;
+        }
+        values.push(value);
+      }
+
+      return values;
+    }
+
     function parseUint8List(text) {
       const tokens = String(text ?? "")
         .split(/[\s,]+/)
@@ -2413,6 +2579,16 @@ extern "C" __global__ void solve(const float* input,
       return sum;
     }
 
+    function buildHistogramExpected(inputA, numBins) {
+      const histogram = new Array(numBins).fill(0);
+      for (const value of inputA) {
+        if (Number.isInteger(value) && value >= 0 && value < numBins) {
+          histogram[value] += 1;
+        }
+      }
+      return histogram;
+    }
+
     function buildSoftmaxExpected(inputA) {
       let maxValue = inputA[0];
       for (let i = 1; i < inputA.length; i += 1) {
@@ -2461,6 +2637,47 @@ extern "C" __global__ void solve(const float* input,
             acc += (weights[key] / denom) * inputV[key * featureD + col];
           }
           output[row * featureD + col] = acc;
+        }
+      }
+
+      return output;
+    }
+
+    function buildMultiHeadAttentionExpected(inputQ, inputK, inputV, sequenceN, modelD, numHeads) {
+      const headDim = modelD / numHeads;
+      const output = new Array(sequenceN * modelD).fill(0);
+
+      for (let head = 0; head < numHeads; head += 1) {
+        const offset = head * headDim;
+        const scale = 1 / Math.sqrt(headDim);
+
+        for (let row = 0; row < sequenceN; row += 1) {
+          const scores = new Array(sequenceN).fill(0);
+          let maxScore = -Infinity;
+
+          for (let key = 0; key < sequenceN; key += 1) {
+            let dot = 0;
+            for (let i = 0; i < headDim; i += 1) {
+              const idx = offset + i;
+              dot += inputQ[row * modelD + idx] * inputK[key * modelD + idx];
+            }
+            const score = dot * scale;
+            scores[key] = score;
+            if (score > maxScore) {
+              maxScore = score;
+            }
+          }
+
+          const weights = scores.map((score) => Math.exp(score - maxScore));
+          const denom = weights.reduce((acc, value) => acc + value, 0.0);
+
+          for (let col = 0; col < headDim; col += 1) {
+            let acc = 0.0;
+            for (let key = 0; key < sequenceN; key += 1) {
+              acc += (weights[key] / denom) * inputV[key * modelD + offset + col];
+            }
+            output[row * modelD + offset + col] = acc;
+          }
         }
       }
 
@@ -2603,6 +2820,13 @@ extern "C" __global__ void solve(const float* input,
         document.getElementById("matrix-l").value = "";
         document.getElementById("matrix-p").value = "";
         document.getElementById("matrix-q").value = "";
+      } else if (problem.kind === "multi-head-attention") {
+        document.getElementById("matrix-m").value = String(example.sequenceN);
+        document.getElementById("matrix-n").value = String(example.modelD);
+        document.getElementById("matrix-k").value = String(example.numHeads);
+        document.getElementById("matrix-l").value = "";
+        document.getElementById("matrix-p").value = "";
+        document.getElementById("matrix-q").value = "";
       } else if (problem.kind === "convolution-3d") {
         document.getElementById("matrix-m").value = String(example.inputDepth);
         document.getElementById("matrix-n").value = String(example.inputRows);
@@ -2635,6 +2859,13 @@ extern "C" __global__ void solve(const float* input,
         document.getElementById("matrix-m").value = String(example.rows);
         document.getElementById("matrix-n").value = String(example.cols);
         document.getElementById("matrix-k").value = "";
+        document.getElementById("matrix-l").value = "";
+        document.getElementById("matrix-p").value = "";
+        document.getElementById("matrix-q").value = "";
+      } else if (problem.kind === "histogramming") {
+        document.getElementById("matrix-m").value = "";
+        document.getElementById("matrix-n").value = "";
+        document.getElementById("matrix-k").value = String(example.numBins);
         document.getElementById("matrix-l").value = "";
         document.getElementById("matrix-p").value = "";
         document.getElementById("matrix-q").value = "";
@@ -2815,6 +3046,14 @@ extern "C" __global__ void solve(const float* input,
             <span class="vector-line">        B (${example.matrixSize} x ${example.matrixSize}) = ${formatMatrixInline(example.inputB, example.matrixSize, example.matrixSize)}</span>
             <span class="vector-line">Output: C (${example.matrixSize} x ${example.matrixSize}) = ${formatMatrixInline(example.expected, example.matrixSize, example.matrixSize)}</span>
           `;
+        } else if (problem.kind === "multi-head-attention") {
+          bodyHtml = `
+            <span class="vector-line">Input:  Q (${example.sequenceN} x ${example.modelD}) = ${formatMatrixInline(example.inputA, example.sequenceN, example.modelD)}</span>
+            <span class="vector-line">        K (${example.sequenceN} x ${example.modelD}) = ${formatMatrixInline(example.inputB, example.sequenceN, example.modelD)}</span>
+            <span class="vector-line">        V (${example.sequenceN} x ${example.modelD}) = ${formatMatrixInline(example.inputC, example.sequenceN, example.modelD)}</span>
+            <span class="vector-line">        heads = ${example.numHeads}</span>
+            <span class="vector-line">Output: output (${example.sequenceN} x ${example.modelD}) = ${formatMatrixInline(example.expected, example.sequenceN, example.modelD)}</span>
+          `;
         } else if (problem.kind === "softmax-attention") {
           bodyHtml = `
             <span class="vector-line">Input:  Q (${example.rowsM} x ${example.colsK}) = ${formatMatrixInline(example.inputA, example.rowsM, example.colsK)}</span>
@@ -2842,6 +3081,12 @@ extern "C" __global__ void solve(const float* input,
           bodyHtml = `
             <span class="vector-line">Input:  A (${example.rows} x ${example.cols}) = ${formatMatrixInline(example.inputA, example.rows, example.cols)}</span>
             <span class="vector-line">Output: A^T (${example.cols} x ${example.rows}) = ${formatMatrixInline(example.expected, example.cols, example.rows)}</span>
+          `;
+        } else if (problem.kind === "histogramming") {
+          bodyHtml = `
+            <span class="vector-line">Input:  input = [${example.inputA.join(", ")}]</span>
+            <span class="vector-line">        num_bins = ${example.numBins}</span>
+            <span class="vector-line">Output: histogram = [${example.expected.join(", ")}]</span>
           `;
         } else {
           bodyHtml = `
@@ -2909,15 +3154,19 @@ extern "C" __global__ void solve(const float* input,
         problem.kind === "convolution-1d" ||
         problem.kind === "matrix-addition" ||
         problem.kind === "matrix-multiplication" ||
+        problem.kind === "multi-head-attention" ||
         problem.kind === "softmax-attention";
-      const usesThirdInput = problem.kind === "softmax-attention";
+      const isSoftmaxAttention = problem.kind === "softmax-attention";
+      const isMultiHeadAttention = problem.kind === "multi-head-attention";
+      const usesThirdInput = isSoftmaxAttention || isMultiHeadAttention;
       const isColorInversion = problem.kind === "color-inversion";
       const isConvolution3D = problem.kind === "convolution-3d";
       const isConvolution2D = problem.kind === "convolution-2d";
       const isMatrixAddition = problem.kind === "matrix-addition";
       const isMatrixMultiply = problem.kind === "matrix-multiplication";
       const isTranspose = problem.kind === "matrix-transpose";
-      const isAttention = problem.kind === "softmax-attention";
+      const isHistogramming = problem.kind === "histogramming";
+      const isAttention = isSoftmaxAttention || isMultiHeadAttention;
       const usesMatrixDims =
         isConvolution3D ||
         isConvolution2D ||
@@ -2925,7 +3174,8 @@ extern "C" __global__ void solve(const float* input,
         isMatrixMultiply ||
         isTranspose ||
         isAttention ||
-        isColorInversion;
+        isColorInversion ||
+        isHistogramming;
       const canRun = problem.supportsRun;
       const canCompile = problem.supportsCudaCompile;
       const matrixDims = document.getElementById("matrix-dims");
@@ -2980,6 +3230,8 @@ extern "C" __global__ void solve(const float* input,
             ? "Matrix A (row-major)"
             : isTranspose
               ? "Input Matrix A (row-major)"
+            : isHistogramming
+              ? "Integer Array"
             : "Input A";
       document.getElementById("input-b-label").textContent =
         problem.kind === "vector-add"
@@ -3008,18 +3260,22 @@ extern "C" __global__ void solve(const float* input,
         : isConvolution2D ? "Input Rows"
         : isTranspose ? "Input Rows"
         : isMatrixAddition ? "Matrix N"
+        : isMultiHeadAttention ? "Sequence N"
         : "Rows M";
       matrixNLabel.textContent =
         isColorInversion ? "Height"
         : isConvolution3D ? "Input Rows"
         : isConvolution2D ? "Input Cols"
         : isTranspose ? "Input Cols"
-        : isAttention ? "Keys N"
+        : isSoftmaxAttention ? "Keys N"
+        : isMultiHeadAttention ? "Model d"
         : "Shared N";
       matrixKLabel.textContent =
         isConvolution3D ? "Input Cols"
         : isConvolution2D ? "Kernel Rows"
-        : isAttention ? "Feature d"
+        : isSoftmaxAttention ? "Feature d"
+        : isMultiHeadAttention ? "Heads h"
+        : isHistogramming ? "num_bins"
         : "Cols K";
       matrixLLabel.textContent =
         isConvolution3D ? "Kernel Depth"
@@ -3049,6 +3305,8 @@ extern "C" __global__ void solve(const float* input,
             ? "1.0, 2.0, 3.0, 4.0"
             : isTranspose
               ? "1.0, 2.0, 3.0, 4.0, 5.0, 6.0"
+            : isHistogramming
+              ? "0, 1, 2, 1, 0"
               : "Input A")
         : "Browser judge is not available for this challenge.";
       inputB.placeholder = canRun
@@ -3229,7 +3487,7 @@ extern "C" __global__ void solve(const float* input,
         vector.textContent = "A^T = [ waiting for a run ]";
       } else if (problem.kind === "color-inversion") {
         vector.textContent = "image = [ waiting for a run ]";
-      } else if (problem.kind === "softmax-attention") {
+      } else if (problem.kind === "softmax-attention" || problem.kind === "multi-head-attention") {
         vector.textContent = "output = [ waiting for a run ]";
       } else if (problem.kind === "convolution-3d") {
         vector.textContent = "output = [ waiting for a run ]";
@@ -3570,6 +3828,48 @@ extern "C" __global__ void solve(const float* input,
       list.appendChild(item);
     }
 
+    function renderHistogrammingResults(inputA, numBins, output) {
+      const summary = document.getElementById("result-summary");
+      const list = document.getElementById("result-list");
+      const vector = document.getElementById("result-vector");
+      summary.innerHTML = "";
+      list.innerHTML = "";
+
+      const expected = buildHistogramExpected(inputA, numBins);
+      const allMatch = output.length === expected.length;
+      let matchCount = 0;
+      if (allMatch) {
+        for (let i = 0; i < output.length; i += 1) {
+          if (Math.abs(output[i] - expected[i]) <= 1e-3) {
+            matchCount += 1;
+          }
+        }
+      }
+
+      const status = document.createElement("span");
+      status.className = `pill ${allMatch && matchCount === output.length ? "good" : "warn"}`;
+      status.textContent = allMatch && matchCount === output.length ? "Accepted" : "Wrong Answer";
+
+      const count = document.createElement("span");
+      count.className = "pill";
+      count.textContent = `Bins: ${numBins}`;
+
+      const matchBadge = document.createElement("span");
+      matchBadge.className = "pill";
+      matchBadge.textContent = `Matched: ${matchCount}/${output.length}`;
+
+      summary.appendChild(status);
+      summary.appendChild(count);
+      summary.appendChild(matchBadge);
+
+      vector.textContent = `[${output.map((v) => formatNumber(v)).join(", ")}]`;
+
+      const item = document.createElement("li");
+      item.className = "result-item";
+      item.innerHTML = `<strong>Histogram</strong>actual=[${output.map((v) => formatNumber(v)).join(", ")}], expected=[${expected.map((v) => formatNumber(v)).join(", ")}]`;
+      list.appendChild(item);
+    }
+
     function renderSoftmaxResults(inputA, output) {
       const summary = document.getElementById("result-summary");
       const list = document.getElementById("result-list");
@@ -3638,6 +3938,44 @@ extern "C" __global__ void solve(const float* input,
       const actualRows = buildMatrixRows(output, rowsM, featureD);
       const expectedRows = buildMatrixRows(expected, rowsM, featureD);
       for (let row = 0; row < rowsM; row += 1) {
+        const item = document.createElement("li");
+        item.className = "result-item";
+        item.innerHTML = `<strong>Row ${row}</strong>actual=${formatVector(actualRows[row])}, expected=${formatVector(expectedRows[row])}`;
+        list.appendChild(item);
+      }
+    }
+
+    function renderMultiHeadAttentionResults(inputQ, inputK, inputV, sequenceN, modelD, numHeads, output) {
+      const summary = document.getElementById("result-summary");
+      const list = document.getElementById("result-list");
+      const vector = document.getElementById("result-vector");
+      summary.innerHTML = "";
+      list.innerHTML = "";
+
+      const expected = buildMultiHeadAttentionExpected(inputQ, inputK, inputV, sequenceN, modelD, numHeads);
+      const allMatch = arraysAlmostEqual(output, expected, 5e-3);
+
+      const status = document.createElement("span");
+      status.className = `pill ${allMatch ? "good" : "warn"}`;
+      status.textContent = allMatch ? "Accepted" : "Wrong Answer";
+
+      const shape = document.createElement("span");
+      shape.className = "pill";
+      shape.textContent = `Shape: ${sequenceN} x ${modelD}`;
+
+      const heads = document.createElement("span");
+      heads.className = "pill";
+      heads.textContent = `Heads: ${numHeads}`;
+
+      summary.appendChild(status);
+      summary.appendChild(shape);
+      summary.appendChild(heads);
+
+      vector.textContent = `output = ${formatMatrixMultiline(output, sequenceN, modelD)}`;
+
+      const actualRows = buildMatrixRows(output, sequenceN, modelD);
+      const expectedRows = buildMatrixRows(expected, sequenceN, modelD);
+      for (let row = 0; row < sequenceN; row += 1) {
         const item = document.createElement("li");
         item.className = "result-item";
         item.innerHTML = `<strong>Row ${row}</strong>actual=${formatVector(actualRows[row])}, expected=${formatVector(expectedRows[row])}`;
@@ -4461,6 +4799,137 @@ extern "C" __global__ void solve(const float* input,
       }
     }
 
+    function runMultiHeadAttention() {
+      if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
+        return;
+      }
+
+      const sequenceN = parsePositiveInt(document.getElementById("matrix-m").value);
+      const modelD = parsePositiveInt(document.getElementById("matrix-n").value);
+      const numHeads = parsePositiveInt(document.getElementById("matrix-k").value);
+
+      if (sequenceN === null || modelD === null || numHeads === null) {
+        pushLog("N, d_model, and h must all be positive integers.", "stderr");
+        return;
+      }
+
+      if (numHeads > modelD || (modelD % numHeads) !== 0) {
+        pushLog("d_model must be divisible by h, and h must not exceed d_model.", "stderr");
+        return;
+      }
+
+      const inputQ = parseFloatList(document.getElementById("input-a").value);
+      const inputK = parseFloatList(document.getElementById("input-b").value);
+      const inputV = parseFloatList(document.getElementById("input-c").value);
+      const expectedLength = sequenceN * modelD;
+
+      if (inputQ.length !== expectedLength) {
+        pushLog("Matrix Q length does not match N x d_model.", "stderr");
+        return;
+      }
+
+      if (inputK.length !== expectedLength) {
+        pushLog("Matrix K length does not match N x d_model.", "stderr");
+        return;
+      }
+
+      if (inputV.length !== expectedLength) {
+        pushLog("Matrix V length does not match N x d_model.", "stderr");
+        return;
+      }
+
+      const kernelName = document.getElementById("kernel-select").value;
+      const inputQBytes = inputQ.length * Float32Array.BYTES_PER_ELEMENT;
+      const inputKBytes = inputK.length * Float32Array.BYTES_PER_ELEMENT;
+      const inputVBytes = inputV.length * Float32Array.BYTES_PER_ELEMENT;
+      const inputQPtr = window.Module._malloc(inputQBytes);
+      const inputKPtr = window.Module._malloc(inputKBytes);
+      const inputVPtr = window.Module._malloc(inputVBytes);
+
+      try {
+        window.Module.HEAPF32.set(inputQ, inputQPtr >> 2);
+        window.Module.HEAPF32.set(inputK, inputKPtr >> 2);
+        window.Module.HEAPF32.set(inputV, inputVPtr >> 2);
+
+        const ok = window.Module.ccall(
+          "ptxvm_run_multi_head_attention",
+          "number",
+          ["string", "number", "number", "number", "number", "number", "number", "number", "number", "number"],
+          [kernelName, inputQPtr, inputQ.length, inputKPtr, inputK.length, inputVPtr, inputV.length, sequenceN, modelD, numHeads]
+        );
+
+        if (!ok) {
+          const error = window.Module.ccall("ptxvm_get_last_error", "string", [], []);
+          pushLog(error || "Kernel execution failed.", "stderr");
+          return;
+        }
+
+        const resultCount = window.Module.ccall("ptxvm_get_result_count", "number", [], []);
+        const output = [];
+        for (let i = 0; i < resultCount; i += 1) {
+          output.push(window.Module.ccall("ptxvm_get_result_value", "number", ["number"], [i]));
+        }
+
+        renderMultiHeadAttentionResults(inputQ, inputK, inputV, sequenceN, modelD, numHeads, output);
+        pushLog(`Judge finished running kernel ${kernelName}.`, "runtime");
+      } finally {
+        window.Module._free(inputQPtr);
+        window.Module._free(inputKPtr);
+        window.Module._free(inputVPtr);
+      }
+    }
+
+    function runHistogramming() {
+      if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
+        return;
+      }
+
+      const inputA = parseIntList(document.getElementById("input-a").value);
+      if (inputA === null || inputA.length === 0) {
+        pushLog("Input array must contain at least one integer.", "stderr");
+        return;
+      }
+
+      const numBins = parsePositiveInt(document.getElementById("matrix-k").value);
+      if (numBins === null) {
+        pushLog("num_bins must be a positive integer.", "stderr");
+        return;
+      }
+
+      const kernelName = document.getElementById("kernel-select").value;
+      const inputABuffer = new Int32Array(inputA);
+      const inputABytes = inputABuffer.byteLength;
+      const inputAPtr = window.Module._malloc(inputABytes);
+
+      try {
+        window.Module.HEAP32.set(inputABuffer, inputAPtr >> 2);
+
+        const ok = window.Module.ccall(
+          "ptxvm_run_histogramming",
+          "number",
+          ["string", "number", "number", "number"],
+          [kernelName, inputAPtr, inputA.length, numBins]
+        );
+
+        if (!ok) {
+          const error = window.Module.ccall("ptxvm_get_last_error", "string", [], []);
+          pushLog(error || "Kernel execution failed.", "stderr");
+          return;
+        }
+
+        const resultCount = window.Module.ccall("ptxvm_get_result_count", "number", [], []);
+        const output = [];
+        for (let i = 0; i < resultCount; i += 1) {
+          output.push(window.Module.ccall("ptxvm_get_result_value", "number", ["number"], [i]));
+        }
+
+        renderHistogrammingResults(inputA, numBins, output);
+        pushLog(`Judge finished running kernel ${kernelName}.`, "runtime");
+      } finally {
+        window.Module._free(inputAPtr);
+      }
+    }
+
     function runColorInversion() {
       if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
         return;
@@ -4571,6 +5040,16 @@ extern "C" __global__ void solve(const float* input,
 
       if (problem.kind === "softmax-attention") {
         runSoftmaxAttention();
+        return;
+      }
+
+      if (problem.kind === "multi-head-attention") {
+        runMultiHeadAttention();
+        return;
+      }
+
+      if (problem.kind === "histogramming") {
+        runHistogramming();
         return;
       }
 
