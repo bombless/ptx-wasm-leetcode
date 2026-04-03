@@ -427,6 +427,225 @@ public:
         return true;
     }
 
+    bool runInt8QuantizedMatMulDemo(const std::string& kernelName,
+                                    const std::int8_t* inputA,
+                                    int inputALen,
+                                    const std::int8_t* inputB,
+                                    int inputBLen,
+                                    int rowsM,
+                                    int colsN,
+                                    int sharedK,
+                                    float scaleA,
+                                    float scaleB,
+                                    float scaleC,
+                                    int zeroPointA,
+                                    int zeroPointB,
+                                    int zeroPointC) {
+        lastError_.clear();
+        lastResult_.clear();
+
+        if (loadedPath_.empty()) {
+            lastError_ = "Load a PTX file before launching the kernel.";
+            return false;
+        }
+
+        if (inputA == nullptr || inputB == nullptr) {
+            lastError_ = "Input buffers must not be null.";
+            return false;
+        }
+
+        if (rowsM <= 0 || colsN <= 0 || sharedK <= 0) {
+            lastError_ = "Matrix dimensions M, N, and K must all be positive integers.";
+            return false;
+        }
+
+        if (!(scaleA > 0.0f && scaleB > 0.0f && scaleC > 0.0f)) {
+            lastError_ = "scale_A, scale_B, and scale_C must all be positive.";
+            return false;
+        }
+
+        if (zeroPointA < -128 || zeroPointA > 127 ||
+            zeroPointB < -128 || zeroPointB > 127 ||
+            zeroPointC < -128 || zeroPointC > 127) {
+            lastError_ = "Zero-points must all be in the int8 range [-128, 127].";
+            return false;
+        }
+
+        const size_t expectedALen =
+            static_cast<size_t>(rowsM) * static_cast<size_t>(sharedK);
+        const size_t expectedBLen =
+            static_cast<size_t>(sharedK) * static_cast<size_t>(colsN);
+        const size_t outputElementCount =
+            static_cast<size_t>(rowsM) * static_cast<size_t>(colsN);
+
+        if (static_cast<size_t>(inputALen) != expectedALen) {
+            lastError_ = "Matrix A does not match the provided M x K dimensions.";
+            return false;
+        }
+
+        if (static_cast<size_t>(inputBLen) != expectedBLen) {
+            lastError_ = "Matrix B does not match the provided K x N dimensions.";
+            return false;
+        }
+
+        auto validationVm = createVm();
+        if (!validationVm) {
+            return false;
+        }
+
+        if (!validationVm->loadProgram(loadedPath_)) {
+            lastError_ = "Failed to reload the uploaded PTX program.";
+            return false;
+        }
+
+        const PTXProgram& program = validationVm->getExecutor().getProgram();
+        const PTXFunction* kernel = resolveKernel(program, kernelName);
+        if (kernel == nullptr) {
+            lastError_ = "Could not find the requested kernel entry in the loaded PTX program.";
+            return false;
+        }
+
+        if (!isThreePointerThreeIntThreeFloatThreeIntSignature(*kernel)) {
+            lastError_ =
+                "This browser demo currently supports kernels with signature "
+                "(.u64, .u64, .u64, .u32, .u32, .u32, .f32, .f32, .f32, .u32, .u32, .u32), such as INT8 quantized matmul.";
+            return false;
+        }
+
+        constexpr unsigned int kBlockDimX = 16;
+        constexpr unsigned int kBlockDimY = 16;
+        const unsigned int gridDimX =
+            static_cast<unsigned int>((colsN + static_cast<int>(kBlockDimX) - 1) / static_cast<int>(kBlockDimX));
+        const unsigned int gridDimY =
+            static_cast<unsigned int>((rowsM + static_cast<int>(kBlockDimY) - 1) / static_cast<int>(kBlockDimY));
+
+        const size_t inputABytes = expectedALen * sizeof(std::int8_t);
+        const size_t inputBBytes = expectedBLen * sizeof(std::int8_t);
+        const size_t outputBytes = outputElementCount * sizeof(std::int8_t);
+        const std::vector<std::int8_t> zeroOutput(outputElementCount, 0);
+        lastResult_.assign(outputElementCount, 0.0f);
+
+        for (int row = 0; row < rowsM; ++row) {
+            for (int col = 0; col < colsN; ++col) {
+                auto vm = createVm();
+                if (!vm) {
+                    return false;
+                }
+
+                if (!vm->loadProgram(loadedPath_)) {
+                    lastError_ = "Failed to reload the uploaded PTX program.";
+                    lastResult_.clear();
+                    return false;
+                }
+
+                const CUdeviceptr inputAPtr = vm->allocateMemory(inputABytes);
+                const CUdeviceptr inputBPtr = vm->allocateMemory(inputBBytes);
+                const CUdeviceptr outputPtr = vm->allocateMemory(outputBytes);
+
+                if (!vm->copyMemoryHtoD(inputAPtr, inputA, inputABytes)) {
+                    lastError_ = "Failed to copy Matrix A into VM memory.";
+                    lastResult_.clear();
+                    return false;
+                }
+
+                if (!vm->copyMemoryHtoD(inputBPtr, inputB, inputBBytes)) {
+                    lastError_ = "Failed to copy Matrix B into VM memory.";
+                    lastResult_.clear();
+                    return false;
+                }
+
+                if (!vm->copyMemoryHtoD(outputPtr, zeroOutput.data(), outputBytes)) {
+                    lastError_ = "Failed to initialize Matrix C in VM memory.";
+                    lastResult_.clear();
+                    return false;
+                }
+
+                std::vector<KernelParameter> params;
+                params.push_back({inputAPtr, kernel->parameters[0].size, kernel->parameters[0].offset});
+                params.push_back({inputBPtr, kernel->parameters[1].size, kernel->parameters[1].offset});
+                params.push_back({outputPtr, kernel->parameters[2].size, kernel->parameters[2].offset});
+                params.push_back({
+                    static_cast<CUdeviceptr>(rowsM),
+                    kernel->parameters[3].size,
+                    kernel->parameters[3].offset,
+                });
+                params.push_back({
+                    static_cast<CUdeviceptr>(colsN),
+                    kernel->parameters[4].size,
+                    kernel->parameters[4].offset,
+                });
+                params.push_back({
+                    static_cast<CUdeviceptr>(sharedK),
+                    kernel->parameters[5].size,
+                    kernel->parameters[5].offset,
+                });
+                params.push_back({packFloat32(scaleA), kernel->parameters[6].size, kernel->parameters[6].offset});
+                params.push_back({packFloat32(scaleB), kernel->parameters[7].size, kernel->parameters[7].offset});
+                params.push_back({packFloat32(scaleC), kernel->parameters[8].size, kernel->parameters[8].offset});
+                params.push_back({
+                    static_cast<CUdeviceptr>(static_cast<std::uint32_t>(zeroPointA)),
+                    kernel->parameters[9].size,
+                    kernel->parameters[9].offset,
+                });
+                params.push_back({
+                    static_cast<CUdeviceptr>(static_cast<std::uint32_t>(zeroPointB)),
+                    kernel->parameters[10].size,
+                    kernel->parameters[10].offset,
+                });
+                params.push_back({
+                    static_cast<CUdeviceptr>(static_cast<std::uint32_t>(zeroPointC)),
+                    kernel->parameters[11].size,
+                    kernel->parameters[11].offset,
+                });
+
+                vm->setKernelParameters(params);
+
+                PTXExecutor& executor = vm->getExecutor();
+                executor.setGridDimensions(gridDimX, gridDimY, 1, kBlockDimX, kBlockDimY, 1);
+
+                ThreadExecutionContext context;
+                context.gridDimX = gridDimX;
+                context.gridDimY = gridDimY;
+                context.gridDimZ = 1;
+                context.blockDimX = kBlockDimX;
+                context.blockDimY = kBlockDimY;
+                context.blockDimZ = 1;
+                context.blockIdxX = static_cast<unsigned int>(col / static_cast<int>(kBlockDimX));
+                context.blockIdxY = static_cast<unsigned int>(row / static_cast<int>(kBlockDimY));
+                context.blockIdxZ = 0;
+                context.threadIdxX = static_cast<unsigned int>(col % static_cast<int>(kBlockDimX));
+                context.threadIdxY = static_cast<unsigned int>(row % static_cast<int>(kBlockDimY));
+                context.threadIdxZ = 0;
+                context.warpSize = 32;
+                context.laneId = static_cast<unsigned int>(
+                    ((context.threadIdxY * kBlockDimX) + context.threadIdxX) % context.warpSize);
+                executor.setSingleThreadExecutionContext(context);
+
+                if (!vm->run()) {
+                    lastError_ = "Kernel execution failed inside the PTX VM.";
+                    lastResult_.clear();
+                    return false;
+                }
+
+                const size_t outputIndex =
+                    static_cast<size_t>(row) * static_cast<size_t>(colsN) + static_cast<size_t>(col);
+                const CUdeviceptr outputCellPtr =
+                    outputPtr + static_cast<CUdeviceptr>(outputIndex * sizeof(std::int8_t));
+
+                std::int8_t outputValue = 0;
+                if (!vm->copyMemoryDtoH(&outputValue, outputCellPtr, sizeof(std::int8_t))) {
+                    lastError_ = "Kernel executed, but reading Matrix C failed.";
+                    lastResult_.clear();
+                    return false;
+                }
+
+                lastResult_[outputIndex] = static_cast<float>(outputValue);
+            }
+        }
+
+        return true;
+    }
+
     bool runSparseMatVecDemo(const std::string& kernelName,
                              const float* inputA,
                              int inputALen,
@@ -5126,6 +5345,118 @@ public:
         return true;
     }
 
+    bool runRainbowTableDemo(const std::string& kernelName,
+                             const std::int32_t* input,
+                             int inputLen,
+                             int rounds) {
+        lastError_.clear();
+        lastResult_.clear();
+        lastUInt32Result_.clear();
+
+        if (loadedPath_.empty()) {
+            lastError_ = "Load a PTX file before launching the kernel.";
+            return false;
+        }
+
+        if (input == nullptr) {
+            lastError_ = "Input buffer must not be null.";
+            return false;
+        }
+
+        if (inputLen <= 0) {
+            lastError_ = "Input array must contain at least one integer.";
+            return false;
+        }
+
+        if (rounds <= 0) {
+            lastError_ = "R must be a positive integer.";
+            return false;
+        }
+
+        auto validationVm = createVm();
+        if (!validationVm) {
+            return false;
+        }
+
+        if (!validationVm->loadProgram(loadedPath_)) {
+            lastError_ = "Failed to reload the uploaded PTX program.";
+            return false;
+        }
+
+        const PTXProgram& program = validationVm->getExecutor().getProgram();
+        const PTXFunction* kernel = resolveKernel(program, kernelName);
+        if (kernel == nullptr) {
+            lastError_ = "Could not find the requested kernel entry in the loaded PTX program.";
+            return false;
+        }
+
+        if (!isTwoPointerTwoIntSignature(*kernel)) {
+            lastError_ =
+                "This browser demo currently supports kernels with signature "
+                "(.u64, .u64, .u32, .u32), such as rainbow table hashing.";
+            return false;
+        }
+
+        lastUInt32Result_.assign(static_cast<size_t>(inputLen), 0);
+
+        for (int i = 0; i < inputLen; ++i) {
+            auto vm = createVm();
+            if (!vm) {
+                return false;
+            }
+
+            if (!vm->loadProgram(loadedPath_)) {
+                lastError_ = "Failed to reload the uploaded PTX program.";
+                lastUInt32Result_.clear();
+                return false;
+            }
+
+            const size_t inputBytes = sizeof(std::int32_t);
+            const size_t outputBytes = sizeof(std::uint32_t);
+            const std::uint32_t zeroOutput = 0;
+            const CUdeviceptr inputPtr = vm->allocateMemory(inputBytes);
+            const CUdeviceptr outputPtr = vm->allocateMemory(outputBytes);
+
+            if (!vm->copyMemoryHtoD(inputPtr, &input[i], inputBytes)) {
+                lastError_ = "Failed to copy the input value into VM memory.";
+                lastUInt32Result_.clear();
+                return false;
+            }
+
+            if (!vm->copyMemoryHtoD(outputPtr, &zeroOutput, outputBytes)) {
+                lastError_ = "Failed to initialize the output hash buffer in VM memory.";
+                lastUInt32Result_.clear();
+                return false;
+            }
+
+            std::vector<KernelParameter> params;
+            params.push_back({inputPtr, kernel->parameters[0].size, kernel->parameters[0].offset});
+            params.push_back({outputPtr, kernel->parameters[1].size, kernel->parameters[1].offset});
+            params.push_back({static_cast<CUdeviceptr>(1), kernel->parameters[2].size, kernel->parameters[2].offset});
+            params.push_back({static_cast<CUdeviceptr>(rounds), kernel->parameters[3].size, kernel->parameters[3].offset});
+
+            vm->setKernelParameters(params);
+            vm->getExecutor().setGridDimensions(1, 1, 1, 32, 1, 1);
+
+            if (!vm->run()) {
+                lastError_ = "Kernel execution failed inside the PTX VM.";
+                lastUInt32Result_.clear();
+                return false;
+            }
+
+            std::uint32_t outputValue = 0;
+            if (!vm->copyMemoryDtoH(&outputValue, outputPtr, outputBytes)) {
+                lastError_ = "Kernel executed, but reading the output hash failed.";
+                lastUInt32Result_.clear();
+                return false;
+            }
+
+            lastUInt32Result_[static_cast<size_t>(i)] = outputValue;
+        }
+
+        return true;
+    }
+
     bool runMatrixCopyDemo(const std::string& kernelName,
                           const float* input,
                           int inputLen) {
@@ -6817,15 +7148,25 @@ public:
     }
 
     int getResultCount() const {
-        return static_cast<int>(lastResult_.size());
+        if (!lastResult_.empty()) {
+            return static_cast<int>(lastResult_.size());
+        }
+        return static_cast<int>(lastUInt32Result_.size());
     }
 
     double getResultValue(int index) const {
-        if (index < 0 || static_cast<size_t>(index) >= lastResult_.size()) {
+        if (!lastResult_.empty()) {
+            if (index < 0 || static_cast<size_t>(index) >= lastResult_.size()) {
+                return std::numeric_limits<double>::quiet_NaN();
+            }
+            return static_cast<double>(lastResult_[static_cast<size_t>(index)]);
+        }
+
+        if (index < 0 || static_cast<size_t>(index) >= lastUInt32Result_.size()) {
             return std::numeric_limits<double>::quiet_NaN();
         }
 
-        return static_cast<double>(lastResult_[static_cast<size_t>(index)]);
+        return static_cast<double>(lastUInt32Result_[static_cast<size_t>(index)]);
     }
 
     const char* getLastError() const {
@@ -6850,6 +7191,7 @@ private:
         loadedPath_.clear();
         entries_.clear();
         lastResult_.clear();
+        lastUInt32Result_.clear();
         lastError_.clear();
         scratch_.clear();
     }
@@ -7011,6 +7353,19 @@ private:
                isScalar32BitInteger(kernel.parameters[4]);
     }
 
+    bool isTwoPointerTwoIntSignature(const PTXFunction& kernel) const {
+        if (kernel.parameters.size() != 4) {
+            return false;
+        }
+
+        return kernel.parameters[0].isPointer &&
+               kernel.parameters[1].isPointer &&
+               !kernel.parameters[2].isPointer &&
+               !kernel.parameters[3].isPointer &&
+               isScalar32BitInteger(kernel.parameters[2]) &&
+               isScalar32BitInteger(kernel.parameters[3]);
+    }
+
     bool isThreePointerFourIntSignature(const PTXFunction& kernel) const {
         if (kernel.parameters.size() != 7) {
             return false;
@@ -7043,6 +7398,34 @@ private:
                isScalar32BitInteger(kernel.parameters[3]) &&
                isScalar32BitInteger(kernel.parameters[4]) &&
                isScalar32BitInteger(kernel.parameters[5]);
+    }
+
+    bool isThreePointerThreeIntThreeFloatThreeIntSignature(const PTXFunction& kernel) const {
+        if (kernel.parameters.size() != 12) {
+            return false;
+        }
+
+        return kernel.parameters[0].isPointer &&
+               kernel.parameters[1].isPointer &&
+               kernel.parameters[2].isPointer &&
+               !kernel.parameters[3].isPointer &&
+               !kernel.parameters[4].isPointer &&
+               !kernel.parameters[5].isPointer &&
+               !kernel.parameters[6].isPointer &&
+               !kernel.parameters[7].isPointer &&
+               !kernel.parameters[8].isPointer &&
+               !kernel.parameters[9].isPointer &&
+               !kernel.parameters[10].isPointer &&
+               !kernel.parameters[11].isPointer &&
+               isScalar32BitInteger(kernel.parameters[3]) &&
+               isScalar32BitInteger(kernel.parameters[4]) &&
+               isScalar32BitInteger(kernel.parameters[5]) &&
+               isScalar32BitFloat(kernel.parameters[6]) &&
+               isScalar32BitFloat(kernel.parameters[7]) &&
+               isScalar32BitFloat(kernel.parameters[8]) &&
+               isScalar32BitInteger(kernel.parameters[9]) &&
+               isScalar32BitInteger(kernel.parameters[10]) &&
+               isScalar32BitInteger(kernel.parameters[11]);
     }
 
     bool isSevenPointerThreeIntSignature(const PTXFunction& kernel) const {
@@ -7273,6 +7656,7 @@ private:
     std::string loadedPath_;
     std::vector<EntrySummary> entries_;
     std::vector<float> lastResult_;
+    std::vector<std::uint32_t> lastUInt32Result_;
     std::string lastError_;
     std::string scratch_;
 };
@@ -7562,6 +7946,38 @@ EMSCRIPTEN_KEEPALIVE int ptxvm_run_matrix_multiplication(const char* kernelName,
         rowsM,
         sharedN,
         colsK) ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int ptxvm_run_int8_quantized_matmul(const char* kernelName,
+                                                         const std::int8_t* inputA,
+                                                         int inputALen,
+                                                         const std::int8_t* inputB,
+                                                         int inputBLen,
+                                                         int rowsM,
+                                                         int colsN,
+                                                         int sharedK,
+                                                         float scaleA,
+                                                         float scaleB,
+                                                         float scaleC,
+                                                         int zeroPointA,
+                                                         int zeroPointB,
+                                                         int zeroPointC) {
+    const std::string chosenKernel = kernelName == nullptr ? "" : kernelName;
+    return bridge().runInt8QuantizedMatMulDemo(
+        chosenKernel,
+        inputA,
+        inputALen,
+        inputB,
+        inputBLen,
+        rowsM,
+        colsN,
+        sharedK,
+        scaleA,
+        scaleB,
+        scaleC,
+        zeroPointA,
+        zeroPointB,
+        zeroPointC) ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE int ptxvm_run_sparse_matvec(const char* kernelName,
@@ -8041,6 +8457,14 @@ EMSCRIPTEN_KEEPALIVE int ptxvm_run_int_array_transform(const char* kernelName,
                                                        int inputLen) {
     const std::string chosenKernel = kernelName == nullptr ? "" : kernelName;
     return bridge().runIntArrayTransformDemo(chosenKernel, input, inputLen) ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int ptxvm_run_rainbow_table(const char* kernelName,
+                                                 const std::int32_t* input,
+                                                 int inputLen,
+                                                 int rounds) {
+    const std::string chosenKernel = kernelName == nullptr ? "" : kernelName;
+    return bridge().runRainbowTableDemo(chosenKernel, input, inputLen, rounds) ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE int ptxvm_run_matrix_copy(const char* kernelName,

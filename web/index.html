@@ -2290,6 +2290,58 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
           }
         ]
       },
+      24: {
+        kind: "rainbow-table",
+        supportsRun: true,
+        supportsCudaCompile: true,
+        judgeContract:
+          "The browser judge expects a PTX entry kernel with input and output pointers plus 32-bit N and R scalars. The output buffer must contain the FNV-1a hash after R iterative rounds for each input integer.",
+        submissionHint:
+          "Submit a single extern \"C\" __global__ solve kernel that hashes each input independently for R rounds and writes the final unsigned 32-bit hash into output.",
+        testcaseHint:
+          "Paste a comma-separated non-negative int array, then provide the number of rounds R.",
+        testcaseHelp:
+          "Input values must be integers in [0, 2147483647], and R must be a positive integer. The browser judge applies the provided FNV-1a byte-wise hash R times per element.",
+        resultTitle: "Rainbow Table Output",
+        resultSubtitle:
+          "The final result must be stored in the output array as 32-bit unsigned hashes.",
+        signatureHint: `extern "C" __global__ void solve(const int* input, unsigned int* output, int N, int R) {`,
+        editorStarterCode: `#include <cuda_runtime.h>
+
+__device__ unsigned int fnv1a_hash(int input) {
+    const unsigned int FNV_PRIME = 16777619u;
+    const unsigned int OFFSET_BASIS = 2166136261u;
+
+    unsigned int hash = OFFSET_BASIS;
+    for (int byte_pos = 0; byte_pos < 4; byte_pos = byte_pos + 1) {
+        unsigned char byte = (unsigned char)((input >> (byte_pos * 8)) & 0xFF);
+        hash = (hash ^ byte) * FNV_PRIME;
+    }
+    return hash;
+}
+
+extern "C" __global__ void solve(const int* input, unsigned int* output, int N, int R) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N) {
+        // TODO: hash input[idx] for R rounds and store the final value into output[idx].
+    }
+}
+`,
+        examples: [
+          {
+            label: "Example 1",
+            rounds: 2,
+            inputA: [123, 456, 789],
+            expected: [1636807824, 1273011621, 2193987222]
+          },
+          {
+            label: "Example 2",
+            rounds: 3,
+            inputA: [0, 1, 2147483647],
+            expected: [96754810, 3571711400, 2006156166]
+          }
+        ]
+      },
       25: {
         kind: "cross-entropy-loss",
         supportsRun: true,
@@ -2588,6 +2640,73 @@ extern "C" __global__ void solve(const float* input, float* output, int N) {
             label: "Example 1",
             inputA: [1.0, 2.0, 3.0, 4.0],
             expected: [1.0, 2.0, 3.0, 4.0]
+          }
+        ]
+      },
+      32: {
+        kind: "int8-quantized-matmul",
+        supportsRun: true,
+        supportsCudaCompile: true,
+        judgeContract:
+          "The browser judge expects a PTX entry kernel with three pointer parameters, then M, N, K as 32-bit integers, then scale_A, scale_B, scale_C as 32-bit floats, then zero_point_A, zero_point_B, zero_point_C as 32-bit integers.",
+        submissionHint:
+          "Submit a single extern \"C\" __global__ solve kernel that reads int8 A/B, writes int8 C, accumulates in int32, rescales through float32, then rounds and clamps into [-128, 127].",
+        testcaseHint:
+          "Paste row-major int8 matrices A and B, scales [scale_A, scale_B, scale_C] in Input C, then provide M, N, K and zero-points zA/zB/zC.",
+        testcaseHelp:
+          "Input A length must equal M x K, input B length must equal K x N, Input C must contain exactly three positive floats, and zero-points must be integers in [-128, 127]. The browser judge uses round-to-nearest with halves away from zero.",
+        resultTitle: "Quantized MatMul Output",
+        resultSubtitle:
+          "The final result must be stored in matrix C as int8. The judge compares it to a CPU quantized reference.",
+        signatureHint:
+          "extern \"C\" __global__ void solve(const int8_t* A, const int8_t* B, int8_t* C, int M, int N, int K, float scale_A, float scale_B, float scale_C, int zero_point_A, int zero_point_B, int zero_point_C) {",
+        editorStarterCode: `#include <cuda_runtime.h>
+
+extern "C" __global__ void solve(const int8_t* A,
+                                 const int8_t* B,
+                                 int8_t* C,
+                                 int M,
+                                 int N,
+                                 int K,
+                                 float scale_A,
+                                 float scale_B,
+                                 float scale_C,
+                                 int zero_point_A,
+                                 int zero_point_B,
+                                 int zero_point_C) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M && col < N) {
+        // TODO: write the quantized matmul result into C[row * N + col].
+    }
+}
+`,
+        examples: [
+          {
+            label: "Example 1",
+            rowsM: 2,
+            colsN: 2,
+            sharedK: 2,
+            zeroPointA: 0,
+            zeroPointB: 0,
+            zeroPointC: 0,
+            inputA: [1, 2, 3, 4],
+            inputB: [5, 6, 7, 8],
+            inputC: [0.1, 0.2, 0.05],
+            expected: [8, 9, 17, 20]
+          },
+          {
+            label: "Example 2",
+            rowsM: 1,
+            colsN: 1,
+            sharedK: 2,
+            zeroPointA: 1,
+            zeroPointB: 3,
+            zeroPointC: 5,
+            inputA: [1, 2],
+            inputB: [3, 4],
+            inputC: [1.0, 1.0, 1.0],
+            expected: [6]
           }
         ]
       },
@@ -4988,6 +5107,24 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       return values;
     }
 
+    function parseInt8List(text) {
+      const tokens = String(text ?? "")
+        .split(/[\s,]+/)
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+      const values = [];
+      for (const token of tokens) {
+        const value = Number(token);
+        if (!Number.isInteger(value) || value < -128 || value > 127) {
+          return null;
+        }
+        values.push(value);
+      }
+
+      return values;
+    }
+
     function parsePositiveInt(text) {
       const value = Number.parseInt(String(text ?? "").trim(), 10);
       return Number.isInteger(value) && value > 0 ? value : null;
@@ -5025,6 +5162,54 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       }
 
       return result;
+    }
+
+    function roundHalfAwayFromZero(value) {
+      return value >= 0 ? Math.floor(value + 0.5) : Math.ceil(value - 0.5);
+    }
+
+    function buildInt8QuantizedMatMulExpected(inputA, inputB, rowsM, colsN, sharedK, scaleA, scaleB, scaleC, zeroPointA, zeroPointB, zeroPointC) {
+      const result = new Array(rowsM * colsN).fill(0);
+      const multiplier = (scaleA * scaleB) / scaleC;
+
+      for (let row = 0; row < rowsM; row += 1) {
+        for (let col = 0; col < colsN; col += 1) {
+          let acc = 0;
+          for (let k = 0; k < sharedK; k += 1) {
+            const a = inputA[row * sharedK + k] - zeroPointA;
+            const b = inputB[k * colsN + col] - zeroPointB;
+            acc += a * b;
+          }
+
+          const scaled = roundHalfAwayFromZero(acc * multiplier) + zeroPointC;
+          result[row * colsN + col] = Math.max(-128, Math.min(127, scaled));
+        }
+      }
+
+      return result;
+    }
+
+    function buildRainbowTableExpected(inputA, rounds) {
+      const FNV_PRIME = 16777619;
+      const OFFSET_BASIS = 2166136261;
+
+      function fnv1aHash(value) {
+        let hash = OFFSET_BASIS >>> 0;
+        const bits = value >>> 0;
+        for (let bytePos = 0; bytePos < 4; bytePos += 1) {
+          const byte = (bits >>> (bytePos * 8)) & 0xFF;
+          hash = Math.imul((hash ^ byte) >>> 0, FNV_PRIME) >>> 0;
+        }
+        return hash >>> 0;
+      }
+
+      return inputA.map((value) => {
+        let hash = value >>> 0;
+        for (let round = 0; round < rounds; round += 1) {
+          hash = fnv1aHash(hash);
+        }
+        return hash >>> 0;
+      });
     }
 
     function buildSparseMatVecExpected(inputA, inputB, rowsM, colsN) {
@@ -6414,6 +6599,13 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         document.getElementById("matrix-l").value = "";
         document.getElementById("matrix-p").value = "";
         document.getElementById("matrix-q").value = "";
+      } else if (problem.kind === "rainbow-table") {
+        document.getElementById("matrix-m").value = String(example.rounds);
+        document.getElementById("matrix-n").value = "";
+        document.getElementById("matrix-k").value = "";
+        document.getElementById("matrix-l").value = "";
+        document.getElementById("matrix-p").value = "";
+        document.getElementById("matrix-q").value = "";
       } else if (problem.kind === "k-means-clustering") {
         document.getElementById("matrix-m").value = String(example.sampleSize);
         document.getElementById("matrix-n").value = String(example.clusterCount);
@@ -6442,6 +6634,13 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         document.getElementById("matrix-l").value = "";
         document.getElementById("matrix-p").value = "";
         document.getElementById("matrix-q").value = "";
+      } else if (problem.kind === "int8-quantized-matmul") {
+        document.getElementById("matrix-m").value = String(example.rowsM);
+        document.getElementById("matrix-n").value = String(example.colsN);
+        document.getElementById("matrix-k").value = String(example.sharedK);
+        document.getElementById("matrix-l").value = String(example.zeroPointA);
+        document.getElementById("matrix-p").value = String(example.zeroPointB);
+        document.getElementById("matrix-q").value = String(example.zeroPointC);
       } else if (problem.kind === "batched-matrix-multiplication") {
         document.getElementById("matrix-m").value = String(example.batchSize);
         document.getElementById("matrix-n").value = String(example.rowsM);
@@ -7159,6 +7358,19 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
             <span class="vector-line">Input:  input = ${formatVector(example.inputA)}</span>
             <span class="vector-line">Output: output = ${formatVector(example.expected)}</span>
           `;
+        } else if (problem.kind === "rainbow-table") {
+          bodyHtml = `
+            <span class="vector-line">Input:  input = ${formatIntVector(example.inputA)}</span>
+            <span class="vector-line">        rounds = ${example.rounds}</span>
+            <span class="vector-line">Output: output = ${formatIntVector(example.expected)}</span>
+          `;
+        } else if (problem.kind === "int8-quantized-matmul") {
+          bodyHtml = `
+            <span class="vector-line">Input:  A (${example.rowsM} x ${example.sharedK}) = ${formatMatrixInline(example.inputA, example.rowsM, example.sharedK)}</span>
+            <span class="vector-line">        B (${example.sharedK} x ${example.colsN}) = ${formatMatrixInline(example.inputB, example.sharedK, example.colsN)}</span>
+            <span class="vector-line">        scales = [${example.inputC.join(", ")}], zps = [${example.zeroPointA}, ${example.zeroPointB}, ${example.zeroPointC}]</span>
+            <span class="vector-line">Output: C (${example.rowsM} x ${example.colsN}) = ${formatMatrixInline(example.expected, example.rowsM, example.colsN)}</span>
+          `;
         } else if (
           problem.kind === "reverse-array" ||
           problem.kind === "matrix-copy" ||
@@ -7256,6 +7468,7 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         problem.kind === "sparse-matrix-vector-multiplication" ||
         problem.kind === "matrix-addition" ||
         problem.kind === "matrix-multiplication" ||
+        problem.kind === "int8-quantized-matmul" ||
         problem.kind === "batched-matrix-multiplication" ||
         problem.kind === "multi-head-attention" ||
         problem.kind === "softmax-attention" ||
@@ -7280,6 +7493,7 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       const usesThirdInput =
         problem.kind === "k-means-clustering" ||
         problem.kind === "top-p-sampling" ||
+        problem.kind === "int8-quantized-matmul" ||
         problem.kind === "max-pooling-2d" ||
         problem.kind === "batch-normalization" ||
         problem.kind === "subarray-sum-3d" ||
@@ -7298,11 +7512,13 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       const isCrossEntropy = problem.kind === "cross-entropy-loss";
       const isSparseMatVec = problem.kind === "sparse-matrix-vector-multiplication";
       const isRmsNormalization = problem.kind === "rms-normalization";
+      const isRainbowTable = problem.kind === "rainbow-table";
       const isMultiAgentSimulation = problem.kind === "multi-agent-simulation";
       const isNearestNeighbor = problem.kind === "nearest-neighbor";
       const isBatchNormalization = problem.kind === "batch-normalization";
       const isMatrixAddition = problem.kind === "matrix-addition";
       const isMatrixMultiply = problem.kind === "matrix-multiplication";
+      const isInt8QuantizedMatMul = problem.kind === "int8-quantized-matmul";
       const isBatchedMatMul = problem.kind === "batched-matrix-multiplication";
       const isTranspose = problem.kind === "matrix-transpose";
       const isMonteCarlo = problem.kind === "monte-carlo-integration";
@@ -7337,6 +7553,7 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       const showMatrixM =
         isRegressionVector ||
         isFft ||
+        isRainbowTable ||
         isConvolution3D ||
         isConvolution2D ||
         isGaussianBlur ||
@@ -7350,6 +7567,7 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         isMoeTopK ||
         isMatrixAddition ||
         isMatrixMultiply ||
+        isInt8QuantizedMatMul ||
         isBatchedMatMul ||
         isMonteCarlo ||
         isValueClipping ||
@@ -7381,6 +7599,7 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         isKMeans ||
         isMoeTopK ||
         isMatrixMultiply ||
+        isInt8QuantizedMatMul ||
         isBatchedMatMul ||
         isLinearAttention ||
         isRotaryEmbedding ||
@@ -7406,6 +7625,7 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         isSparseMatVec ||
         isRmsNormalization ||
         isMatrixMultiply ||
+        isInt8QuantizedMatMul ||
         isBatchedMatMul ||
         isSoftmaxAttention ||
         isAlibiAttention ||
@@ -7427,12 +7647,13 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         isConvolution2D ||
         isGaussianBlur ||
         isBatchedMatMul ||
+        isInt8QuantizedMatMul ||
         isAlibiAttention ||
         isBfsShortestPath ||
         isCountArray3D ||
         isSubarraySum2D;
-      const showMatrixP = isConvolution3D || isSubarraySum2D || isBfsShortestPath;
-      const showMatrixQ = isConvolution3D || isSubarraySum2D || isBfsShortestPath;
+      const showMatrixP = isConvolution3D || isSubarraySum2D || isBfsShortestPath || isInt8QuantizedMatMul;
+      const showMatrixQ = isConvolution3D || isSubarraySum2D || isBfsShortestPath || isInt8QuantizedMatMul;
       const usesMatrixDims =
         showMatrixM ||
         showMatrixN ||
@@ -7476,12 +7697,16 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       document.getElementById("input-a-label").textContent =
         problem.kind === "vector-add"
           ? "Vector A"
+          : isRainbowTable
+            ? "Input Numbers"
           : isKMeans
             ? "Point X Coordinates"
           : isTopPSampling
             ? "Logits"
           : isMoeTopK
             ? "Logits Matrix (row-major)"
+          : isInt8QuantizedMatMul
+            ? "Matrix A (row-major int8)"
           : isRegressionVector
             ? "Feature Matrix X (row-major)"
           : problem.kind === "max-pooling-2d"
@@ -7532,6 +7757,8 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
             ? "Matrix A (row-major)"
           : isMatrixMultiply
             ? "Matrix A (row-major)"
+            : isInt8QuantizedMatMul
+              ? "Matrix A (row-major int8)"
             : isTranspose
               ? "Input Matrix A (row-major)"
             : (isCountArray || isCountArray2D || isCountArray3D || isBfsShortestPath || isSubarraySum || isSubarraySum2D || isSubarraySum3D || isMaxSubarray)
@@ -7542,10 +7769,14 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       document.getElementById("input-b-label").textContent =
         problem.kind === "vector-add"
           ? "Vector B"
+          : isRainbowTable
+            ? "Unused"
           : isKMeans
             ? "Point Y Coordinates"
           : isTopPSampling
             ? "Threshold p"
+          : isInt8QuantizedMatMul
+            ? "Matrix B (row-major int8)"
           : isRegressionVector
             ? "Target Vector y"
           : problem.kind === "max-pooling-2d"
@@ -7582,6 +7813,8 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
             ? "Matrix B (row-major)"
           : isMatrixMultiply
             ? "Matrix B (row-major)"
+          : isInt8QuantizedMatMul
+            ? "Matrix B (row-major int8)"
           : isInterleave || isMergeSorted
             ? "Input B"
           : problem.kind === "dot-product"
@@ -7596,6 +7829,8 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
           ? "Initial Centroids [cx0, cy0, ...]"
           : isTopPSampling
           ? "Seed [int]"
+          : isInt8QuantizedMatMul
+          ? "Scales [scale_A, scale_B, scale_C]"
           : isBatchNormalization
           ? "Beta"
           : isSubarraySum3D
@@ -7609,8 +7844,10 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       matrixMLabel.textContent =
         isColorInversion ? "Width"
         : isGrayscale ? "Width"
+        : isRainbowTable ? "Rounds R"
         : isKMeans ? "Samples N"
         : isMoeTopK ? "Tokens M"
+        : isInt8QuantizedMatMul ? "Rows M"
         : isRegressionVector ? "Samples N"
         : isFft ? "Signal N"
         : isMultiAgentSimulation ? "Agents N"
@@ -7645,6 +7882,7 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         : isGrayscale ? "Height"
         : isKMeans ? "Clusters k"
         : isMoeTopK ? "Experts E"
+        : isInt8QuantizedMatMul ? "Cols N"
         : isRegressionVector ? "Features D"
         : isConvolution3D ? "Input Rows"
         : isGaussianBlur ? "Input Cols"
@@ -7677,6 +7915,7 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         isBatchNormalization ? "eps"
         : isKMeans ? "Max Iter"
         : isMoeTopK ? "Top k"
+        : isInt8QuantizedMatMul ? "Shared K"
         : isConvolution3D ? "Input Cols"
         : isGaussianBlur ? "Kernel Rows"
         : isConvolution2D ? "Kernel Rows"
@@ -7702,6 +7941,7 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         : isGaussianBlur ? "Kernel Cols"
         : isConvolution2D ? "Kernel Cols"
         : isBatchedMatMul ? "Cols K"
+        : isInt8QuantizedMatMul ? "Zero Point A"
         : isAlibiAttention ? "Alpha"
         : isBfsShortestPath ? "Start Col"
         : isCountArray3D ? "Target P"
@@ -7709,11 +7949,13 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         : "Extra Dim";
       matrixPLabel.textContent =
         isConvolution3D ? "Kernel Rows"
+        : isInt8QuantizedMatMul ? "Zero Point B"
         : isBfsShortestPath ? "End Row"
         : isSubarraySum2D ? "Start Col"
         : "Extra Dim";
       matrixQLabel.textContent =
         isConvolution3D ? "Kernel Cols"
+        : isInt8QuantizedMatMul ? "Zero Point C"
         : isBfsShortestPath ? "End Col"
         : isSubarraySum2D ? "End Col"
         : "Extra Dim";
@@ -7721,12 +7963,16 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       inputA.placeholder = canRun
         ? (problem.kind === "vector-add"
           ? "1.0, 2.0, 3.0"
+          : isRainbowTable
+            ? "123, 456, 789"
           : isKMeans
             ? "1.0, 2.0, 8.0, 9.0"
           : isTopPSampling
             ? "1.0, 2.0, 3.0, 0.5"
           : isMoeTopK
             ? "1.0, 2.0, 3.0, 4.0, 4.0, 3.0, 2.0, 1.0"
+          : isInt8QuantizedMatMul
+            ? "1, 2, 3, 4"
           : isRegressionVector
             ? "2.0, 1.0, 1.0, 2.0, 3.0, 3.0"
           : problem.kind === "max-pooling-2d"
@@ -7785,12 +8031,14 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
             ? "1.0, 0.0, 0.0, 1.0, 1.0, 1.0"
           : isAttention
             ? "1.0, 0.0, 0.0, 0.0"
-          : isMatrixAddition
-            ? "1.0, 2.0, 3.0, 4.0"
-          : isMatrixMultiply
-            ? "1.0, 2.0, 3.0, 4.0"
-            : isTranspose
-              ? "1.0, 2.0, 3.0, 4.0, 5.0, 6.0"
+            : isMatrixAddition
+              ? "1.0, 2.0, 3.0, 4.0"
+            : isMatrixMultiply
+              ? "1.0, 2.0, 3.0, 4.0"
+              : isInt8QuantizedMatMul
+                ? "1, 2, 3, 4"
+              : isTranspose
+                ? "1.0, 2.0, 3.0, 4.0, 5.0, 6.0"
             : (isCountArray || isCountArray2D || isCountArray3D || isBfsShortestPath || isSubarraySum || isSubarraySum2D || isSubarraySum3D || isMaxSubarray)
               ? "1, 2, 3, 4, 1"
             : isHistogramming
@@ -7800,10 +8048,14 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       inputB.placeholder = canRun
         ? (problem.kind === "vector-add"
           ? "4.0, 5.0, 6.0"
+          : isRainbowTable
+            ? ""
           : isKMeans
             ? "1.0, 2.0, 8.0, 9.0"
           : isTopPSampling
             ? "0.9"
+          : isInt8QuantizedMatMul
+            ? "5, 6, 7, 8"
           : isRegressionVector
             ? "1.0, 1.0, 0.0"
           : problem.kind === "max-pooling-2d"
@@ -7844,6 +8096,8 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
               ? "5.0, 6.0, 7.0, 8.0"
             : isMatrixMultiply
               ? "5.0, 6.0, 7.0, 8.0"
+              : isInt8QuantizedMatMul
+                ? "5, 6, 7, 8"
               : isInterleave || isMergeSorted
                 ? "4.0, 5.0, 6.0"
               : "")
@@ -7855,6 +8109,8 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
           ? "1.0, 1.0, 8.0, 8.0"
           : isTopPSampling
           ? "42"
+          : isInt8QuantizedMatMul
+          ? "0.1, 0.2, 0.05"
           : isBatchNormalization
           ? "0.0, 0.0"
           : isSubarraySum3D
@@ -7890,6 +8146,9 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       matrixL.disabled = !canRun || !showMatrixL;
       matrixP.disabled = !canRun || !showMatrixP;
       matrixQ.disabled = !canRun || !showMatrixQ;
+      matrixL.min = isInt8QuantizedMatMul ? "-128" : "1";
+      matrixP.min = isInt8QuantizedMatMul ? "-128" : "1";
+      matrixQ.min = isInt8QuantizedMatMul ? "-128" : "1";
 
       fileInput.disabled = !canCompile;
       setCudaSourceEditorDisabled(!canCompile);
@@ -8028,6 +8287,8 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       summary.innerHTML = '<span class="pill">Waiting for a run</span>';
       if (problem.kind === "multi-agent-simulation") {
         vector.textContent = "agents_next = [ waiting for a run ]";
+      } else if (problem.kind === "rainbow-table") {
+        vector.textContent = "output = [ waiting for a run ]";
       } else if (problem.kind === "k-means-clustering") {
         vector.textContent = "labels / centroids = [ waiting for a run ]";
       } else if (problem.kind === "ordinary-least-squares" || problem.kind === "logistic-regression") {
@@ -8178,6 +8439,81 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
         const item = document.createElement("li");
         item.className = "result-item";
         item.innerHTML = `<strong>Row ${row}</strong>actual=${formatVector(actualRows[row])}, expected=${formatVector(expectedRows[row])}`;
+        list.appendChild(item);
+      }
+    }
+
+    function renderInt8QuantizedMatMulResults(inputA, inputB, rowsM, colsN, sharedK, scaleA, scaleB, scaleC, zeroPointA, zeroPointB, zeroPointC, output) {
+      const actual = output.map((value) => Math.round(value));
+      const expected = buildInt8QuantizedMatMulExpected(
+        inputA,
+        inputB,
+        rowsM,
+        colsN,
+        sharedK,
+        scaleA,
+        scaleB,
+        scaleC,
+        zeroPointA,
+        zeroPointB,
+        zeroPointC
+      );
+
+      renderMatrixJudgeResults(
+        actual,
+        expected,
+        rowsM,
+        colsN,
+        "C",
+        [
+          `Shared K: ${sharedK}`,
+          `scales: [${formatNumber(scaleA)}, ${formatNumber(scaleB)}, ${formatNumber(scaleC)}]`,
+          `zps: [${zeroPointA}, ${zeroPointB}, ${zeroPointC}]`
+        ],
+        0
+      );
+    }
+
+    function renderRainbowTableResults(inputA, rounds, output) {
+      const summary = document.getElementById("result-summary");
+      const list = document.getElementById("result-list");
+      const vector = document.getElementById("result-vector");
+      summary.innerHTML = "";
+      list.innerHTML = "";
+
+      const actual = output.map((value) => Math.trunc(value));
+      const expected = buildRainbowTableExpected(inputA, rounds);
+      const allMatch =
+        actual.length === expected.length &&
+        actual.every((value, index) => value === expected[index]);
+
+      const status = document.createElement("span");
+      status.className = `pill ${allMatch ? "good" : "warn"}`;
+      status.textContent = allMatch ? "Accepted" : "Wrong Answer";
+      summary.appendChild(status);
+
+      const count = document.createElement("span");
+      count.className = "pill";
+      count.textContent = `Elements: ${inputA.length}`;
+      summary.appendChild(count);
+
+      const roundsBadge = document.createElement("span");
+      roundsBadge.className = "pill";
+      roundsBadge.textContent = `Rounds: ${rounds}`;
+      summary.appendChild(roundsBadge);
+
+      const expectedBadge = document.createElement("span");
+      expectedBadge.className = "pill";
+      expectedBadge.textContent = `Expected output = ${formatIntVector(expected)}`;
+      summary.appendChild(expectedBadge);
+
+      vector.textContent = `output = ${formatIntVector(actual)}`;
+
+      const maxItems = Math.min(actual.length, expected.length, 12);
+      for (let i = 0; i < maxItems; i += 1) {
+        const item = document.createElement("li");
+        item.className = "result-item";
+        item.innerHTML = `<strong>output[${i}] = ${actual[i]}</strong>expected=${expected[i]}, input=${inputA[i]}`;
         list.appendChild(item);
       }
     }
@@ -9974,6 +10310,181 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
       } finally {
         window.Module._free(inputAPtr);
         window.Module._free(inputBPtr);
+      }
+    }
+
+    function runInt8QuantizedMatMul() {
+      if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
+        return;
+      }
+
+      const rowsM = parsePositiveInt(document.getElementById("matrix-m").value);
+      const colsN = parsePositiveInt(document.getElementById("matrix-n").value);
+      const sharedK = parsePositiveInt(document.getElementById("matrix-k").value);
+      const zeroPointA = parseInteger(document.getElementById("matrix-l").value);
+      const zeroPointB = parseInteger(document.getElementById("matrix-p").value);
+      const zeroPointC = parseInteger(document.getElementById("matrix-q").value);
+
+      if (
+        rowsM === null ||
+        colsN === null ||
+        sharedK === null ||
+        zeroPointA === null ||
+        zeroPointB === null ||
+        zeroPointC === null
+      ) {
+        pushLog("M, N, K must be positive integers, and zero-points must be integers.", "stderr");
+        return;
+      }
+
+      if (
+        zeroPointA < -128 || zeroPointA > 127 ||
+        zeroPointB < -128 || zeroPointB > 127 ||
+        zeroPointC < -128 || zeroPointC > 127
+      ) {
+        pushLog("Zero-points must all be in [-128, 127].", "stderr");
+        return;
+      }
+
+      const inputA = parseInt8List(document.getElementById("input-a").value);
+      const inputB = parseInt8List(document.getElementById("input-b").value);
+      const scales = parseFloatList(document.getElementById("input-c").value);
+
+      if (inputA === null || inputB === null) {
+        pushLog("Matrices A and B must contain only int8 values in [-128, 127].", "stderr");
+        return;
+      }
+
+      if (scales.length !== 3 || !scales.every((value) => Number.isFinite(value) && value > 0.0)) {
+        pushLog("Input C must contain exactly three positive finite scales: scale_A, scale_B, scale_C.", "stderr");
+        return;
+      }
+
+      if (inputA.length !== rowsM * sharedK) {
+        pushLog("Matrix A length does not match M x K.", "stderr");
+        return;
+      }
+
+      if (inputB.length !== sharedK * colsN) {
+        pushLog("Matrix B length does not match K x N.", "stderr");
+        return;
+      }
+
+      const kernelName = document.getElementById("kernel-select").value;
+      const inputABuffer = new Int8Array(inputA);
+      const inputBBuffer = new Int8Array(inputB);
+      const inputAPtr = window.Module._malloc(inputABuffer.byteLength);
+      const inputBPtr = window.Module._malloc(inputBBuffer.byteLength);
+
+      try {
+        window.Module.HEAPU8.set(new Uint8Array(inputABuffer.buffer), inputAPtr);
+        window.Module.HEAPU8.set(new Uint8Array(inputBBuffer.buffer), inputBPtr);
+
+        const ok = window.Module.ccall(
+          "ptxvm_run_int8_quantized_matmul",
+          "number",
+          [
+            "string", "number", "number", "number", "number",
+            "number", "number", "number", "number", "number",
+            "number", "number", "number", "number"
+          ],
+          [
+            kernelName, inputAPtr, inputA.length, inputBPtr, inputB.length,
+            rowsM, colsN, sharedK, scales[0], scales[1], scales[2],
+            zeroPointA, zeroPointB, zeroPointC
+          ]
+        );
+
+        if (!ok) {
+          const error = window.Module.ccall("ptxvm_get_last_error", "string", [], []);
+          pushLog(error || "Kernel execution failed.", "stderr");
+          return;
+        }
+
+        const resultCount = window.Module.ccall("ptxvm_get_result_count", "number", [], []);
+        const output = [];
+        for (let i = 0; i < resultCount; i += 1) {
+          output.push(window.Module.ccall("ptxvm_get_result_value", "number", ["number"], [i]));
+        }
+
+        renderInt8QuantizedMatMulResults(
+          inputA,
+          inputB,
+          rowsM,
+          colsN,
+          sharedK,
+          scales[0],
+          scales[1],
+          scales[2],
+          zeroPointA,
+          zeroPointB,
+          zeroPointC,
+          output
+        );
+        pushLog(`Judge finished running kernel ${kernelName}.`, "runtime");
+      } finally {
+        window.Module._free(inputAPtr);
+        window.Module._free(inputBPtr);
+      }
+    }
+
+    function runRainbowTable() {
+      if (!ensureRuntime() || !ensureProgramMatchesCurrentProblem()) {
+        return;
+      }
+
+      const rounds = parsePositiveInt(document.getElementById("matrix-m").value);
+      if (rounds === null) {
+        pushLog("R must be a positive integer.", "stderr");
+        return;
+      }
+
+      const inputA = parseIntList(document.getElementById("input-a").value);
+      if (inputA === null) {
+        pushLog("Input numbers must all be integers.", "stderr");
+        return;
+      }
+
+      if (inputA.length === 0) {
+        pushLog("Input numbers must contain at least one integer.", "stderr");
+        return;
+      }
+
+      if (inputA.some((value) => value < 0 || value > 2147483647)) {
+        pushLog("Input numbers must stay within [0, 2147483647].", "stderr");
+        return;
+      }
+
+      const kernelName = document.getElementById("kernel-select").value;
+      const inputABuffer = new Int32Array(inputA);
+      const inputAPtr = window.Module._malloc(inputABuffer.byteLength);
+
+      try {
+        window.Module.HEAP32.set(inputABuffer, inputAPtr >> 2);
+
+        const ok = window.Module.ccall(
+          "ptxvm_run_rainbow_table",
+          "number",
+          ["string", "number", "number", "number"],
+          [kernelName, inputAPtr, inputA.length, rounds]
+        );
+
+        if (!ok) {
+          const error = window.Module.ccall("ptxvm_get_last_error", "string", [], []);
+          pushLog(error || "Kernel execution failed.", "stderr");
+          return;
+        }
+
+        const resultCount = window.Module.ccall("ptxvm_get_result_count", "number", [], []);
+        const output = [];
+        for (let i = 0; i < resultCount; i += 1) {
+          output.push(window.Module.ccall("ptxvm_get_result_value", "number", ["number"], [i]));
+        }
+
+        renderRainbowTableResults(inputA, rounds, output);
+        pushLog(`Judge finished running kernel ${kernelName}.`, "runtime");
+      } finally {
+        window.Module._free(inputAPtr);
       }
     }
 
@@ -13002,6 +13513,16 @@ extern "C" __global__ void solve(const float* dist, float* output, int N) {
 
       if (problem.kind === "matrix-multiplication") {
         runMatrixMultiplication();
+        return;
+      }
+
+      if (problem.kind === "rainbow-table") {
+        runRainbowTable();
+        return;
+      }
+
+      if (problem.kind === "int8-quantized-matmul") {
+        runInt8QuantizedMatMul();
         return;
       }
 
