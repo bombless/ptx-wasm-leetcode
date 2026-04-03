@@ -5097,9 +5097,17 @@ extern "C" __global__ void solve(const float* x,
             }
           : problem;
 
+      const mergedOverride = cloneJson(override);
+      delete mergedOverride.starterCode;
+      delete mergedOverride.editorStarterCode;
+      delete mergedOverride.signatureHint;
+
       return finalizeProblem({
         ...sanitizedProblem,
-        ...cloneJson(override),
+        ...mergedOverride,
+        starterCode: sanitizedProblem.starterCode,
+        editorStarterCode: "",
+        signatureHint: sanitizedProblem.signatureHint,
         examples: Array.isArray(override.examples) ? cloneJson(override.examples) : problem.examples
       });
     }
@@ -8803,7 +8811,7 @@ extern "C" __global__ void solve(const float* x,
         return;
       }
 
-      setCudaSourceValue(problem.editorStarterCode || problem.starterCode);
+      setCudaSourceValue(problem.starterCode);
       if (pushMessage) {
         pushLog(problem.supportsCudaCompile
           ? "Reset the CUDA editor to the starter code."
