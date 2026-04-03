@@ -1,0 +1,9 @@
+{
+  "name": "ptx-wasm",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build-web.mjs",
+    "dev": "node tools/dev-server.mjs"
+  }
+}
