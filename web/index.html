@@ -703,14 +703,6 @@
       background: rgba(88, 166, 255, 0.18);
     }
 
-    .field .editor-shell .cm-panels .cm-search-close {
-      margin-left: auto;
-      min-width: 36px;
-      padding: 8px 10px;
-      font-weight: 700;
-      line-height: 1;
-    }
-
     .source-editor-fallback.is-code-editor-hidden {
       display: none;
     }
@@ -4811,62 +4803,10 @@ extern "C" __global__ void solve(const float* x,
           event.preventDefault();
           focusCudaSourceEditor();
         });
-        attachEditorSearchPanelEnhancer();
       } catch (error) {
         console.error("Failed to initialize the CUDA editor.", error);
         cudaSourceEditor = null;
       }
-    }
-
-    function closeCudaSearchPanel() {
-      const view = cudaSourceEditor?.view;
-      if (!view?.contentDOM) {
-        return;
-      }
-
-      view.focus();
-      view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", {
-        key: "Escape",
-        code: "Escape",
-        bubbles: true
-      }));
-    }
-
-    function decorateCudaSearchPanel() {
-      const host = cudaSourceEditor?.host;
-      if (!host) {
-        return;
-      }
-
-      const panel = host.querySelector(".cm-panels .cm-search");
-      if (!panel || panel.querySelector(".cm-search-close")) {
-        return;
-      }
-
-      const closeButton = document.createElement("button");
-      closeButton.type = "button";
-      closeButton.className = "cm-search-close";
-      closeButton.textContent = "×";
-      closeButton.setAttribute("aria-label", "Close search");
-      closeButton.title = "Close search";
-      closeButton.addEventListener("click", () => {
-        closeCudaSearchPanel();
-      });
-      panel.appendChild(closeButton);
-    }
-
-    function attachEditorSearchPanelEnhancer() {
-      const host = cudaSourceEditor?.host;
-      if (!host || host.dataset.searchPanelEnhancerAttached === "true") {
-        return;
-      }
-
-      host.dataset.searchPanelEnhancerAttached = "true";
-      const observer = new MutationObserver(() => {
-        decorateCudaSearchPanel();
-      });
-      observer.observe(host, { childList: true, subtree: true });
-      decorateCudaSearchPanel();
     }
 
     function getCudaSourceValue() {
