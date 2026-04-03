@@ -13,6 +13,100 @@
 
 namespace {
 
+bool isFloatLikeRegisterClass(RegisterClass registerClass)
+{
+    return registerClass == RegisterClass::FLOAT16 ||
+           registerClass == RegisterClass::FLOAT32 ||
+           registerClass == RegisterClass::FLOAT64;
+}
+
+float halfBitsToFloat(uint16_t bits)
+{
+    const uint32_t sign = static_cast<uint32_t>(bits & 0x8000u) << 16;
+    const uint32_t exponent = (bits >> 10) & 0x1Fu;
+    const uint32_t mantissa = bits & 0x03FFu;
+    uint32_t resultBits = 0;
+
+    if (exponent == 0) {
+        if (mantissa == 0) {
+            resultBits = sign;
+        } else {
+            uint32_t normalizedMantissa = mantissa;
+            int shift = -1;
+            do {
+                shift += 1;
+                normalizedMantissa <<= 1;
+            } while ((normalizedMantissa & 0x0400u) == 0);
+
+            normalizedMantissa &= 0x03FFu;
+            const uint32_t adjustedExponent =
+                static_cast<uint32_t>(127 - 15 - shift);
+            resultBits = sign |
+                         (adjustedExponent << 23) |
+                         (normalizedMantissa << 13);
+        }
+    } else if (exponent == 0x1Fu) {
+        resultBits = sign | 0x7F800000u | (mantissa << 13);
+    } else {
+        const uint32_t adjustedExponent = exponent + (127 - 15);
+        resultBits = sign | (adjustedExponent << 23) | (mantissa << 13);
+    }
+
+    float result = 0.0f;
+    std::memcpy(&result, &resultBits, sizeof(result));
+    return result;
+}
+
+uint16_t floatToHalfBits(float value)
+{
+    uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+
+    const uint32_t sign = (bits >> 16) & 0x8000u;
+    int exponent = static_cast<int>((bits >> 23) & 0xFFu) - 127 + 15;
+    uint32_t mantissa = bits & 0x007FFFFFu;
+
+    if (std::isnan(value)) {
+        return static_cast<uint16_t>(sign | 0x7E00u);
+    }
+
+    if (std::isinf(value)) {
+        return static_cast<uint16_t>(sign | 0x7C00u);
+    }
+
+    if (exponent <= 0) {
+        if (exponent < -10) {
+            return static_cast<uint16_t>(sign);
+        }
+
+        mantissa |= 0x00800000u;
+        const uint32_t shiftedMantissa =
+            mantissa >> static_cast<uint32_t>(1 - exponent);
+        const uint32_t rounded = (shiftedMantissa + 0x00001000u) >> 13;
+        return static_cast<uint16_t>(sign | rounded);
+    }
+
+    if (exponent >= 0x1F) {
+        return static_cast<uint16_t>(sign | 0x7C00u);
+    }
+
+    const uint32_t roundedMantissa = mantissa + 0x00001000u;
+    if (roundedMantissa & 0x00800000u) {
+        mantissa = 0;
+        exponent += 1;
+        if (exponent >= 0x1F) {
+            return static_cast<uint16_t>(sign | 0x7C00u);
+        }
+    } else {
+        mantissa = roundedMantissa;
+    }
+
+    return static_cast<uint16_t>(
+        sign |
+        (static_cast<uint32_t>(exponent) << 10) |
+        ((mantissa >> 13) & 0x03FFu));
+}
+
 bool tryMapSpecialRegister(const std::string& name, SpecialRegister& outRegister)
 {
     if (name == "%tid.x") {
@@ -346,6 +440,131 @@ public:
         return m_hasSingleThreadExecutionContext;
     }
 
+    float readImmediateAsFloat(int64_t immediateValue, DataType hint) const
+    {
+        if (hint == DataType::F64) {
+            const uint64_t bits = static_cast<uint64_t>(immediateValue);
+            if ((bits >> 32) != 0) {
+                double doubleValue = 0.0;
+                std::memcpy(&doubleValue, &bits, sizeof(doubleValue));
+                return static_cast<float>(doubleValue);
+            }
+        }
+
+        const uint32_t bits = static_cast<uint32_t>(immediateValue);
+        float floatValue = 0.0f;
+        std::memcpy(&floatValue, &bits, sizeof(floatValue));
+        return floatValue;
+    }
+
+    double readImmediateAsDouble(int64_t immediateValue, DataType hint) const
+    {
+        if (hint == DataType::F32 || hint == DataType::F16) {
+            return static_cast<double>(readImmediateAsFloat(immediateValue, hint));
+        }
+
+        const uint64_t bits = static_cast<uint64_t>(immediateValue);
+        if ((bits >> 32) != 0) {
+            double doubleValue = 0.0;
+            std::memcpy(&doubleValue, &bits, sizeof(doubleValue));
+            return doubleValue;
+        }
+
+        return static_cast<double>(readImmediateAsFloat(immediateValue, DataType::F32));
+    }
+
+    float readOperandAsFloat(const Operand& operand, DataType hint = DataType::F32) {
+        switch (operand.type) {
+            case OperandType::REGISTER:
+                m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_READS);
+                if (operand.registerClass == RegisterClass::FLOAT16) {
+                    return halfBitsToFloat(m_registerBank->readHalfRegisterBits(operand.registerIndex));
+                }
+                if (operand.registerClass == RegisterClass::FLOAT64) {
+                    return static_cast<float>(m_registerBank->readDoubleRegister(operand.registerIndex));
+                }
+                if (operand.registerClass == RegisterClass::FLOAT32) {
+                    return m_registerBank->readFloatRegister(operand.registerIndex);
+                }
+                return static_cast<float>(m_registerBank->readRegister(operand.registerIndex));
+            case OperandType::IMMEDIATE:
+                if (hint == DataType::F16 || hint == DataType::F32 || hint == DataType::F64) {
+                    return readImmediateAsFloat(operand.immediateValue, hint);
+                }
+                return static_cast<float>(operand.immediateValue);
+            default:
+                return static_cast<float>(getSourceValue(operand));
+        }
+    }
+
+    double readOperandAsDouble(const Operand& operand, DataType hint = DataType::F64) {
+        switch (operand.type) {
+            case OperandType::REGISTER:
+                m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_READS);
+                if (operand.registerClass == RegisterClass::FLOAT16) {
+                    return static_cast<double>(halfBitsToFloat(m_registerBank->readHalfRegisterBits(operand.registerIndex)));
+                }
+                if (operand.registerClass == RegisterClass::FLOAT32) {
+                    return static_cast<double>(m_registerBank->readFloatRegister(operand.registerIndex));
+                }
+                if (operand.registerClass == RegisterClass::FLOAT64) {
+                    return m_registerBank->readDoubleRegister(operand.registerIndex);
+                }
+                return static_cast<double>(m_registerBank->readRegister(operand.registerIndex));
+            case OperandType::IMMEDIATE:
+                if (hint == DataType::F16 || hint == DataType::F32 || hint == DataType::F64) {
+                    return readImmediateAsDouble(operand.immediateValue, hint);
+                }
+                return static_cast<double>(operand.immediateValue);
+            default:
+                return static_cast<double>(getSourceValue(operand));
+        }
+    }
+
+    void writeFloatResult(const Operand& dest, float value, DataType hint = DataType::F32)
+    {
+        m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_WRITES);
+
+        if (dest.registerClass == RegisterClass::FLOAT16 || hint == DataType::F16) {
+            m_registerBank->writeHalfRegisterBits(dest.registerIndex, floatToHalfBits(value));
+            return;
+        }
+
+        if (dest.registerClass == RegisterClass::FLOAT64 || hint == DataType::F64) {
+            m_registerBank->writeDoubleRegister(dest.registerIndex, static_cast<double>(value));
+            return;
+        }
+
+        if (dest.registerClass == RegisterClass::FLOAT32 || isFloatLikeRegisterClass(dest.registerClass) || hint == DataType::F32) {
+            m_registerBank->writeFloatRegister(dest.registerIndex, value);
+            return;
+        }
+
+        m_registerBank->writeRegister(dest.registerIndex, static_cast<uint64_t>(value));
+    }
+
+    void writeDoubleResult(const Operand& dest, double value, DataType hint = DataType::F64)
+    {
+        m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_WRITES);
+
+        if (dest.registerClass == RegisterClass::FLOAT16 || hint == DataType::F16) {
+            m_registerBank->writeHalfRegisterBits(dest.registerIndex, floatToHalfBits(static_cast<float>(value)));
+            return;
+        }
+
+        if (dest.registerClass == RegisterClass::FLOAT32 || hint == DataType::F32) {
+            m_registerBank->writeFloatRegister(dest.registerIndex, static_cast<float>(value));
+            return;
+        }
+
+        if (dest.registerClass == RegisterClass::FLOAT64 || isFloatLikeRegisterClass(dest.registerClass) || hint == DataType::F64) {
+            m_registerBank->writeDoubleRegister(dest.registerIndex, value);
+            return;
+        }
+
+        m_registerBank->writeRegister(dest.registerIndex, static_cast<uint64_t>(value));
+    }
+
     bool executeSingleThreadReplay() {
         if (m_decodedInstructions.empty() || m_executionComplete) {
             std::cout << "No instructions to execute" << std::endl;
@@ -436,22 +655,31 @@ public:
         
         // Read from memory based on data type
         uint64_t value = 0;
+        const bool useHalfRegister = instr.dest.registerClass == RegisterClass::FLOAT16;
         switch (instr.dataType) {
             case DataType::S8:
+            case DataType::B8:
                 // Read as unsigned, then sign-extend
                 value = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int8_t>(m_memorySubsystem->read<uint8_t>(space, address))));
                 break;
             case DataType::U8:
                 value = static_cast<uint64_t>(m_memorySubsystem->read<uint8_t>(space, address));
                 break;
+            case DataType::F16:
+            case DataType::B16:
             case DataType::S16:
                 // Read as unsigned, then sign-extend
-                value = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(m_memorySubsystem->read<uint16_t>(space, address))));
+                if (useHalfRegister || instr.dataType == DataType::F16) {
+                    value = static_cast<uint64_t>(m_memorySubsystem->read<uint16_t>(space, address));
+                } else {
+                    value = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(m_memorySubsystem->read<uint16_t>(space, address))));
+                }
                 break;
             case DataType::U16:
                 value = static_cast<uint64_t>(m_memorySubsystem->read<uint16_t>(space, address));
                 break;
             case DataType::S32:
+            case DataType::B32:
                 // Read as unsigned, then sign-extend
                 value = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(m_memorySubsystem->read<uint32_t>(space, address))));
                 break;
@@ -462,12 +690,13 @@ public:
             case DataType::S64:
             case DataType::U64:
             case DataType::F64:
+            case DataType::B64:
             default:
                 value = m_memorySubsystem->read<uint64_t>(space, address);
                 break;
         }
         
-        storeTypedRegisterValue(instr.dest.registerIndex, value, instr.dataType);
+        storeTypedRegisterValue(instr.dest, value, instr.dataType);
         m_currentInstructionIndex++;
         return true;
     }
@@ -481,7 +710,9 @@ public:
             return true;
         }
         
-        uint64_t src = getSourceBits(instr.sources[0], instr.dataType);
+        uint64_t src = instr.sources[0].registerClass == RegisterClass::FLOAT16
+            ? static_cast<uint64_t>(m_registerBank->readHalfRegisterBits(instr.sources[0].registerIndex))
+            : getSourceBits(instr.sources[0], instr.dataType);
         
         // Calculate memory address
         uint64_t address = instr.dest.address;
@@ -517,23 +748,33 @@ public:
         }
         
         // Write to memory based on data type
+        const bool useHalfRegister = instr.sources[0].registerClass == RegisterClass::FLOAT16;
         switch (instr.dataType) {
             case DataType::S8:
+            case DataType::B8:
             case DataType::U8:
                 m_memorySubsystem->write<uint8_t>(space, address, static_cast<uint8_t>(src));
                 break;
+            case DataType::F16:
+            case DataType::B16:
             case DataType::S16:
             case DataType::U16:
                 m_memorySubsystem->write<uint16_t>(space, address, static_cast<uint16_t>(src));
                 break;
             case DataType::S32:
+            case DataType::B32:
             case DataType::U32:
             case DataType::F32:
-                m_memorySubsystem->write<uint32_t>(space, address, static_cast<uint32_t>(src));
+                if (useHalfRegister) {
+                    m_memorySubsystem->write<uint16_t>(space, address, static_cast<uint16_t>(src));
+                } else {
+                    m_memorySubsystem->write<uint32_t>(space, address, static_cast<uint32_t>(src));
+                }
                 break;
             case DataType::S64:
             case DataType::U64:
             case DataType::F64:
+            case DataType::B64:
             default:
                 m_memorySubsystem->write<uint64_t>(space, address, static_cast<uint64_t>(src));
                 break;
@@ -728,6 +969,15 @@ public:
             return true;
         }
 
+        if (instr.dataType == DataType::F16) {
+            const float src0 = readOperandAsFloat(instr.sources[0], DataType::F16);
+            const float src1 = readOperandAsFloat(instr.sources[1], DataType::F16);
+            const float src2 = readOperandAsFloat(instr.sources[2], DataType::F16);
+            writeFloatResult(instr.dest, src0 * src1 + src2, DataType::F16);
+            m_currentInstructionIndex++;
+            return true;
+        }
+
         const uint64_t src0 = static_cast<uint64_t>(getSourceValue(instr.sources[0]));
         const uint64_t src1 = static_cast<uint64_t>(getSourceValue(instr.sources[1]));
         const uint64_t src2 = static_cast<uint64_t>(getSourceValue(instr.sources[2]));
@@ -838,6 +1088,12 @@ public:
             m_currentInstructionIndex++;
             return true;
         }
+        if (instr.dataType == DataType::F16) {
+            const float src = readOperandAsFloat(instr.sources[0], DataType::F16);
+            writeFloatResult(instr.dest, -src, DataType::F16);
+            m_currentInstructionIndex++;
+            return true;
+        }
         int64_t src = getSourceValue(instr.sources[0]);
         int64_t result = -src;
         storeRegisterValue(instr.dest.registerIndex, static_cast<uint64_t>(result));
@@ -847,6 +1103,12 @@ public:
     bool executeABS(const DecodedInstruction& instr) {
         if (instr.dest.type != OperandType::REGISTER || instr.sources.size() != 1) {
             std::cerr << "Invalid ABS instruction format" << std::endl;
+            m_currentInstructionIndex++;
+            return true;
+        }
+        if (instr.dataType == DataType::F16) {
+            const float src = readOperandAsFloat(instr.sources[0], DataType::F16);
+            writeFloatResult(instr.dest, std::abs(src), DataType::F16);
             m_currentInstructionIndex++;
             return true;
         }
@@ -961,6 +1223,14 @@ public:
             m_currentInstructionIndex++;
             return true;
         }
+
+        if (instr.dataType == DataType::F16) {
+            const float src0 = readOperandAsFloat(instr.sources[0], DataType::F16);
+            const float src1 = readOperandAsFloat(instr.sources[1], DataType::F16);
+            writeFloatResult(instr.dest, src0 + src1, DataType::F16);
+            m_currentInstructionIndex++;
+            return true;
+        }
         
         // Get source operands
         int64_t src0 = getSourceValue(instr.sources[0]);
@@ -1011,6 +1281,14 @@ public:
             m_currentInstructionIndex++;
             return true;
         }
+
+        if (instr.dataType == DataType::F16) {
+            const float src0 = readOperandAsFloat(instr.sources[0], DataType::F16);
+            const float src1 = readOperandAsFloat(instr.sources[1], DataType::F16);
+            writeFloatResult(instr.dest, src0 - src1, DataType::F16);
+            m_currentInstructionIndex++;
+            return true;
+        }
         
         // Get source operands
         int64_t src0 = getSourceValue(instr.sources[0]);
@@ -1039,6 +1317,14 @@ public:
     bool executeMUL(const DecodedInstruction& instr) {
         if (instr.dest.type != OperandType::REGISTER || instr.sources.size() != 2) {
             std::cerr << "Invalid MUL instruction format" << std::endl;
+            m_currentInstructionIndex++;
+            return true;
+        }
+
+        if (instr.dataType == DataType::F16) {
+            const float src0 = readOperandAsFloat(instr.sources[0], DataType::F16);
+            const float src1 = readOperandAsFloat(instr.sources[1], DataType::F16);
+            writeFloatResult(instr.dest, src0 * src1, DataType::F16);
             m_currentInstructionIndex++;
             return true;
         }
@@ -1083,6 +1369,19 @@ public:
             m_currentInstructionIndex++;
             return true;
         }
+
+        if (instr.dataType == DataType::F16) {
+            const float src0 = readOperandAsFloat(instr.sources[0], DataType::F16);
+            const float src1 = readOperandAsFloat(instr.sources[1], DataType::F16);
+            if (src1 == 0.0f) {
+                std::cerr << "Division by zero" << std::endl;
+                m_currentInstructionIndex++;
+                return true;
+            }
+            writeFloatResult(instr.dest, src0 / src1, DataType::F16);
+            m_currentInstructionIndex++;
+            return true;
+        }
         
         // Get source operands
         int64_t src0 = getSourceValue(instr.sources[0]);
@@ -1113,38 +1412,19 @@ public:
             return true;
         }
         
-        // Handle based on data type (mov.f32, mov.s32, etc.)
-        if (instr.dataType == DataType::F32) {
-            // Floating point move
-            float src;
-            if (instr.sources[0].type == OperandType::IMMEDIATE) {
-                // Convert immediate to float
-                uint32_t bits = static_cast<uint32_t>(instr.sources[0].immediateValue);
-                std::memcpy(&src, &bits, sizeof(float));
-            } else if (instr.sources[0].type == OperandType::REGISTER) {
-                src = m_registerBank->readFloatRegister(instr.sources[0].registerIndex);
+        // Handle based on register class / data type (mov.f16, mov.f32, mov.s32, etc.)
+        if (instr.dest.registerClass == RegisterClass::FLOAT16 || instr.dataType == DataType::F16) {
+            if (instr.sources[0].type == OperandType::REGISTER && instr.sources[0].registerClass == RegisterClass::FLOAT16) {
+                m_registerBank->writeHalfRegisterBits(
+                    instr.dest.registerIndex,
+                    m_registerBank->readHalfRegisterBits(instr.sources[0].registerIndex));
             } else {
-                std::cerr << "Invalid MOV.F32 source operand type" << std::endl;
-                m_currentInstructionIndex++;
-                return true;
+                writeFloatResult(instr.dest, readOperandAsFloat(instr.sources[0], DataType::F16), DataType::F16);
             }
-            
-            m_registerBank->writeFloatRegister(instr.dest.registerIndex, src);
-        } else if (instr.dataType == DataType::F64) {
-            // Double move
-            double src;
-            if (instr.sources[0].type == OperandType::IMMEDIATE) {
-                uint64_t bits = instr.sources[0].immediateValue;
-                std::memcpy(&src, &bits, sizeof(double));
-            } else if (instr.sources[0].type == OperandType::REGISTER) {
-                src = m_registerBank->readDoubleRegister(instr.sources[0].registerIndex);
-            } else {
-                std::cerr << "Invalid MOV.F64 source operand type" << std::endl;
-                m_currentInstructionIndex++;
-                return true;
-            }
-            
-            m_registerBank->writeDoubleRegister(instr.dest.registerIndex, src);
+        } else if (instr.dest.registerClass == RegisterClass::FLOAT32 || instr.dataType == DataType::F32) {
+            writeFloatResult(instr.dest, readOperandAsFloat(instr.sources[0], DataType::F32), DataType::F32);
+        } else if (instr.dest.registerClass == RegisterClass::FLOAT64 || instr.dataType == DataType::F64) {
+            writeDoubleResult(instr.dest, readOperandAsDouble(instr.sources[0], DataType::F64), DataType::F64);
         } else {
             // Integer move (default)
             int64_t src = getSourceValue(instr.sources[0]);
@@ -1199,22 +1479,31 @@ public:
         
         // Read from memory based on data type
         uint64_t value = 0;
+        const bool useHalfRegister = instr.dest.registerClass == RegisterClass::FLOAT16;
         switch (instr.dataType) {
             case DataType::S8:
+            case DataType::B8:
                 // Read as unsigned, then sign-extend
                 value = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int8_t>(m_memorySubsystem->read<uint8_t>(space, address))));
                 break;
             case DataType::U8:
                 value = static_cast<uint64_t>(m_memorySubsystem->read<uint8_t>(space, address));
                 break;
+            case DataType::F16:
+            case DataType::B16:
             case DataType::S16:
                 // Read as unsigned, then sign-extend
-                value = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(m_memorySubsystem->read<uint16_t>(space, address))));
+                if (useHalfRegister || instr.dataType == DataType::F16) {
+                    value = static_cast<uint64_t>(m_memorySubsystem->read<uint16_t>(space, address));
+                } else {
+                    value = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(m_memorySubsystem->read<uint16_t>(space, address))));
+                }
                 break;
             case DataType::U16:
                 value = static_cast<uint64_t>(m_memorySubsystem->read<uint16_t>(space, address));
                 break;
             case DataType::S32:
+            case DataType::B32:
                 // Read as unsigned, then sign-extend
                 value = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(m_memorySubsystem->read<uint32_t>(space, address))));
                 break;
@@ -1225,13 +1514,14 @@ public:
             case DataType::S64:
             case DataType::U64:
             case DataType::F64:
+            case DataType::B64:
             default:
                 value = m_memorySubsystem->read<uint64_t>(space, address);
                 break;
         }
         
         // Store result in destination register
-        storeTypedRegisterValue(instr.dest.registerIndex, value, instr.dataType);
+        storeTypedRegisterValue(instr.dest, value, instr.dataType);
         
         // Move to next instruction
         m_currentInstructionIndex++;
@@ -1248,7 +1538,9 @@ public:
         }
         
         // Get source value to store
-        uint64_t src = getSourceBits(instr.sources[0], instr.dataType);
+        uint64_t src = instr.sources[0].registerClass == RegisterClass::FLOAT16
+            ? static_cast<uint64_t>(m_registerBank->readHalfRegisterBits(instr.sources[0].registerIndex))
+            : getSourceBits(instr.sources[0], instr.dataType);
         
         // Calculate memory address
         uint64_t address = instr.dest.address;
@@ -1291,23 +1583,33 @@ public:
                   << " dataType=" << static_cast<int>(instr.dataType) << std::endl;
         
         // Write to memory based on data type
+        const bool useHalfRegister = instr.sources[0].registerClass == RegisterClass::FLOAT16;
         switch (instr.dataType) {
             case DataType::S8:
+            case DataType::B8:
             case DataType::U8:
                 m_memorySubsystem->write<uint8_t>(space, address, static_cast<uint8_t>(src));
                 break;
+            case DataType::F16:
+            case DataType::B16:
             case DataType::S16:
             case DataType::U16:
                 m_memorySubsystem->write<uint16_t>(space, address, static_cast<uint16_t>(src));
                 break;
             case DataType::S32:
+            case DataType::B32:
             case DataType::U32:
             case DataType::F32:
-                m_memorySubsystem->write<uint32_t>(space, address, static_cast<uint32_t>(src));
+                if (useHalfRegister) {
+                    m_memorySubsystem->write<uint16_t>(space, address, static_cast<uint16_t>(src));
+                } else {
+                    m_memorySubsystem->write<uint32_t>(space, address, static_cast<uint32_t>(src));
+                }
                 break;
             case DataType::S64:
             case DataType::U64:
             case DataType::F64:
+            case DataType::B64:
             default:
                 m_memorySubsystem->write<uint64_t>(space, address, static_cast<uint64_t>(src));
                 break;
@@ -1423,20 +1725,24 @@ public:
         switch (instr.dataType) {
             case DataType::S8:
             case DataType::U8:
+            case DataType::B8:
                 paramValue = impl.m_memorySubsystem->read<uint8_t>(MemorySpace::PARAMETER, paramOffset);
                 break;
             case DataType::S16:
             case DataType::U16:
+            case DataType::B16:
                 paramValue = impl.m_memorySubsystem->read<uint16_t>(MemorySpace::PARAMETER, paramOffset);
                 break;
             case DataType::S32:
             case DataType::U32:
             case DataType::F32:
+            case DataType::B32:
                 paramValue = impl.m_memorySubsystem->read<uint32_t>(MemorySpace::PARAMETER, paramOffset);
                 break;
             case DataType::S64:
             case DataType::U64:
             case DataType::F64:
+            case DataType::B64:
             default:
                 paramValue = impl.m_memorySubsystem->read<uint64_t>(MemorySpace::PARAMETER, paramOffset);
                 break;
@@ -1447,7 +1753,7 @@ public:
                   << " into %r" << instr.dest.registerIndex << std::endl;
         
         // Store result in destination register
-        impl.storeTypedRegisterValue(instr.dest.registerIndex, paramValue, instr.dataType);
+        impl.storeTypedRegisterValue(instr.dest, paramValue, instr.dataType);
         
         // Move to next instruction
         impl.m_currentInstructionIndex++;
@@ -1506,24 +1812,14 @@ public:
             return true;
         }
 
-        auto readF32Operand = [this](const Operand& operand) -> float {
-            if (operand.type == OperandType::IMMEDIATE) {
-                uint32_t bits = static_cast<uint32_t>(operand.immediateValue);
-                float value = 0.0f;
-                std::memcpy(&value, &bits, sizeof(value));
-                return value;
-            }
-            return m_registerBank->readFloatRegister(operand.registerIndex);
-        };
-
-        float src1 = readF32Operand(instr.sources[0]);
-        float src2 = readF32Operand(instr.sources[1]);
+        float src1 = readOperandAsFloat(instr.sources[0], DataType::F32);
+        float src2 = readOperandAsFloat(instr.sources[1], DataType::F32);
         
         // Perform floating-point addition
         float result = src1 + src2;
         
         // Write back to destination register
-        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        writeFloatResult(instr.dest, result, DataType::F32);
         
         // Update performance counters
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
@@ -1540,21 +1836,11 @@ public:
             return true;
         }
 
-        auto readF32Operand = [this](const Operand& operand) -> float {
-            if (operand.type == OperandType::IMMEDIATE) {
-                uint32_t bits = static_cast<uint32_t>(operand.immediateValue);
-                float value = 0.0f;
-                std::memcpy(&value, &bits, sizeof(value));
-                return value;
-            }
-            return m_registerBank->readFloatRegister(operand.registerIndex);
-        };
-
-        float src1 = readF32Operand(instr.sources[0]);
-        float src2 = readF32Operand(instr.sources[1]);
+        float src1 = readOperandAsFloat(instr.sources[0], DataType::F32);
+        float src2 = readOperandAsFloat(instr.sources[1], DataType::F32);
         
         float result = src1 - src2;
-        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        writeFloatResult(instr.dest, result, DataType::F32);
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
         
         m_currentInstructionIndex++;
@@ -1569,21 +1855,11 @@ public:
             return true;
         }
 
-        auto readF32Operand = [this](const Operand& operand) -> float {
-            if (operand.type == OperandType::IMMEDIATE) {
-                uint32_t bits = static_cast<uint32_t>(operand.immediateValue);
-                float value = 0.0f;
-                std::memcpy(&value, &bits, sizeof(value));
-                return value;
-            }
-            return m_registerBank->readFloatRegister(operand.registerIndex);
-        };
-
-        float src1 = readF32Operand(instr.sources[0]);
-        float src2 = readF32Operand(instr.sources[1]);
+        float src1 = readOperandAsFloat(instr.sources[0], DataType::F32);
+        float src2 = readOperandAsFloat(instr.sources[1], DataType::F32);
         
         float result = src1 * src2;
-        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        writeFloatResult(instr.dest, result, DataType::F32);
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
         
         m_currentInstructionIndex++;
@@ -1598,18 +1874,8 @@ public:
             return true;
         }
 
-        auto readF32Operand = [this](const Operand& operand) -> float {
-            if (operand.type == OperandType::IMMEDIATE) {
-                uint32_t bits = static_cast<uint32_t>(operand.immediateValue);
-                float value = 0.0f;
-                std::memcpy(&value, &bits, sizeof(value));
-                return value;
-            }
-            return m_registerBank->readFloatRegister(operand.registerIndex);
-        };
-
-        float src1 = readF32Operand(instr.sources[0]);
-        float src2 = readF32Operand(instr.sources[1]);
+        float src1 = readOperandAsFloat(instr.sources[0], DataType::F32);
+        float src2 = readOperandAsFloat(instr.sources[1], DataType::F32);
         
         if (src2 == 0.0f) {
             std::cerr << "Division by zero in DIV.F32" << std::endl;
@@ -1618,7 +1884,7 @@ public:
         }
         
         float result = src1 / src2;
-        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        writeFloatResult(instr.dest, result, DataType::F32);
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
         
         m_currentInstructionIndex++;
@@ -1633,25 +1899,15 @@ public:
             return true;
         }
 
-        auto readF32Operand = [this](const Operand& operand) -> float {
-            if (operand.type == OperandType::IMMEDIATE) {
-                uint32_t bits = static_cast<uint32_t>(operand.immediateValue);
-                float value = 0.0f;
-                std::memcpy(&value, &bits, sizeof(value));
-                return value;
-            }
-            return m_registerBank->readFloatRegister(operand.registerIndex);
-        };
-
         // fma.f32 %f0, %f1, %f2, %f3;  // %f0 = %f1 * %f2 + %f3
-        float src1 = readF32Operand(instr.sources[0]);
-        float src2 = readF32Operand(instr.sources[1]);
-        float src3 = readF32Operand(instr.sources[2]);
+        float src1 = readOperandAsFloat(instr.sources[0], DataType::F32);
+        float src2 = readOperandAsFloat(instr.sources[1], DataType::F32);
+        float src3 = readOperandAsFloat(instr.sources[2], DataType::F32);
         
         // Use FMA if available, otherwise simulate
         float result = src1 * src2 + src3;
         
-        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        writeFloatResult(instr.dest, result, DataType::F32);
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
         
         m_currentInstructionIndex++;
@@ -1666,19 +1922,9 @@ public:
             return true;
         }
 
-        auto readF32Operand = [this](const Operand& operand) -> float {
-            if (operand.type == OperandType::IMMEDIATE) {
-                uint32_t bits = static_cast<uint32_t>(operand.immediateValue);
-                float value = 0.0f;
-                std::memcpy(&value, &bits, sizeof(value));
-                return value;
-            }
-            return m_registerBank->readFloatRegister(operand.registerIndex);
-        };
-
-        float src = readF32Operand(instr.sources[0]);
+        float src = readOperandAsFloat(instr.sources[0], DataType::F32);
         float result = std::exp2(src);
-        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        writeFloatResult(instr.dest, result, DataType::F32);
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
 
         m_currentInstructionIndex++;
@@ -1693,19 +1939,9 @@ public:
             return true;
         }
 
-        auto readF32Operand = [this](const Operand& operand) -> float {
-            if (operand.type == OperandType::IMMEDIATE) {
-                uint32_t bits = static_cast<uint32_t>(operand.immediateValue);
-                float value = 0.0f;
-                std::memcpy(&value, &bits, sizeof(value));
-                return value;
-            }
-            return m_registerBank->readFloatRegister(operand.registerIndex);
-        };
-
-        float src = readF32Operand(instr.sources[0]);
+        float src = readOperandAsFloat(instr.sources[0], DataType::F32);
         float result = std::sqrt(src);
-        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        writeFloatResult(instr.dest, result, DataType::F32);
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
         
         m_currentInstructionIndex++;
@@ -1720,9 +1956,9 @@ public:
             return true;
         }
         
-        float src = m_registerBank->readFloatRegister(instr.sources[0].registerIndex);
+        float src = readOperandAsFloat(instr.sources[0], DataType::F32);
         float result = -src;
-        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        writeFloatResult(instr.dest, result, DataType::F32);
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
         
         m_currentInstructionIndex++;
@@ -1737,9 +1973,9 @@ public:
             return true;
         }
         
-        float src = m_registerBank->readFloatRegister(instr.sources[0].registerIndex);
+        float src = readOperandAsFloat(instr.sources[0], DataType::F32);
         float result = std::abs(src);
-        m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+        writeFloatResult(instr.dest, result, DataType::F32);
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
         
         m_currentInstructionIndex++;
@@ -1808,6 +2044,21 @@ public:
                 case CompareOp::HI: result = (src1 > src2); break;
                 case CompareOp::GE:
                 case CompareOp::HS: result = (src1 >= src2); break;
+                case CompareOp::EQ: result = (src1 == src2); break;
+                case CompareOp::NE: result = (src1 != src2); break;
+                default: break;
+            }
+        } else if (instr.dataType == DataType::F16 ||
+                   instr.sources[0].registerClass == RegisterClass::FLOAT16 ||
+                   instr.sources[1].registerClass == RegisterClass::FLOAT16) {
+            float src1 = readOperandAsFloat(instr.sources[0], DataType::F16);
+            float src2 = readOperandAsFloat(instr.sources[1], DataType::F16);
+
+            switch (instr.compareOp) {
+                case CompareOp::LT: result = (src1 < src2); break;
+                case CompareOp::LE: result = (src1 <= src2); break;
+                case CompareOp::GT: result = (src1 > src2); break;
+                case CompareOp::GE: result = (src1 >= src2); break;
                 case CompareOp::EQ: result = (src1 == src2); break;
                 case CompareOp::NE: result = (src1 != src2); break;
                 default: break;
@@ -1882,42 +2133,6 @@ public:
             return true;
         }
 
-        auto readFloatSource = [this](const Operand& operand) -> float {
-            if (operand.type == OperandType::IMMEDIATE) {
-                uint32_t bits = static_cast<uint32_t>(operand.immediateValue);
-                float value = 0.0f;
-                std::memcpy(&value, &bits, sizeof(value));
-                return value;
-            }
-
-            if (operand.type == OperandType::REGISTER) {
-                return m_registerBank->readFloatRegister(operand.registerIndex);
-            }
-
-            uint32_t bits = static_cast<uint32_t>(getSourceBits(operand, DataType::F32));
-            float value = 0.0f;
-            std::memcpy(&value, &bits, sizeof(value));
-            return value;
-        };
-
-        auto readDoubleSource = [this](const Operand& operand) -> double {
-            if (operand.type == OperandType::IMMEDIATE) {
-                uint64_t bits = static_cast<uint64_t>(operand.immediateValue);
-                double value = 0.0;
-                std::memcpy(&value, &bits, sizeof(value));
-                return value;
-            }
-
-            if (operand.type == OperandType::REGISTER) {
-                return m_registerBank->readDoubleRegister(operand.registerIndex);
-            }
-
-            uint64_t bits = getSourceBits(operand, DataType::F64);
-            double value = 0.0;
-            std::memcpy(&value, &bits, sizeof(value));
-            return value;
-        };
-        
         // Select based on data type
         if (instr.dataType == DataType::S32 || instr.dataType == DataType::U32 || 
             instr.dataType == DataType::S64 || instr.dataType == DataType::U64) {
@@ -1926,18 +2141,26 @@ public:
             uint64_t src2 = static_cast<uint64_t>(getSourceValue(instr.sources[1]));
             uint64_t result = pred ? src1 : src2;
             m_registerBank->writeRegister(instr.dest.registerIndex, result);
+        } else if (instr.dataType == DataType::F16 ||
+                   instr.dest.registerClass == RegisterClass::FLOAT16 ||
+                   instr.sources[0].registerClass == RegisterClass::FLOAT16 ||
+                   instr.sources[1].registerClass == RegisterClass::FLOAT16) {
+            float src1 = readOperandAsFloat(instr.sources[0], DataType::F16);
+            float src2 = readOperandAsFloat(instr.sources[1], DataType::F16);
+            float result = pred ? src1 : src2;
+            writeFloatResult(instr.dest, result, DataType::F16);
         } else if (instr.dataType == DataType::F32) {
             // Single precision float
-            float src1 = readFloatSource(instr.sources[0]);
-            float src2 = readFloatSource(instr.sources[1]);
+            float src1 = readOperandAsFloat(instr.sources[0], DataType::F32);
+            float src2 = readOperandAsFloat(instr.sources[1], DataType::F32);
             float result = pred ? src1 : src2;
-            m_registerBank->writeFloatRegister(instr.dest.registerIndex, result);
+            writeFloatResult(instr.dest, result, DataType::F32);
         } else if (instr.dataType == DataType::F64) {
             // Double precision float
-            double src1 = readDoubleSource(instr.sources[0]);
-            double src2 = readDoubleSource(instr.sources[1]);
+            double src1 = readOperandAsDouble(instr.sources[0], DataType::F64);
+            double src2 = readOperandAsDouble(instr.sources[1], DataType::F64);
             double result = pred ? src1 : src2;
-            m_registerBank->writeDoubleRegister(instr.dest.registerIndex, result);
+            writeDoubleResult(instr.dest, result, DataType::F64);
         }
         
         m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
@@ -1949,6 +2172,60 @@ public:
     bool executeCVT(const DecodedInstruction& instr) {
         if (instr.dest.type != OperandType::REGISTER || instr.sources.size() != 1) {
             std::cerr << "Invalid CVT instruction format" << std::endl;
+            m_currentInstructionIndex++;
+            return true;
+        }
+
+        const Operand& srcOperand = instr.sources[0];
+        const Operand& destOperand = instr.dest;
+
+        // BarraCUDA currently emits some FP16 PTX with mismatched cvt modifiers
+        // (for example loading into %h with .u32 or converting %h -> %f using
+        // cvt.f64.f32). Prefer the actual register classes when either side is
+        // a floating register, then fall back to the decoded src/dst types.
+        if (destOperand.registerClass == RegisterClass::FLOAT16) {
+            writeFloatResult(destOperand, readOperandAsFloat(srcOperand, DataType::F32), DataType::F16);
+            m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
+            m_currentInstructionIndex++;
+            return true;
+        }
+
+        if (srcOperand.registerClass == RegisterClass::FLOAT16 &&
+            destOperand.registerClass == RegisterClass::FLOAT32) {
+            writeFloatResult(destOperand, readOperandAsFloat(srcOperand, DataType::F16), DataType::F32);
+            m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
+            m_currentInstructionIndex++;
+            return true;
+        }
+
+        if (srcOperand.registerClass == RegisterClass::FLOAT16 &&
+            destOperand.registerClass == RegisterClass::FLOAT64) {
+            writeDoubleResult(destOperand, readOperandAsDouble(srcOperand, DataType::F16), DataType::F64);
+            m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
+            m_currentInstructionIndex++;
+            return true;
+        }
+
+        if (srcOperand.registerClass == RegisterClass::FLOAT32 &&
+            destOperand.registerClass == RegisterClass::FLOAT32) {
+            writeFloatResult(destOperand, readOperandAsFloat(srcOperand, DataType::F32), DataType::F32);
+            m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
+            m_currentInstructionIndex++;
+            return true;
+        }
+
+        if (srcOperand.registerClass == RegisterClass::FLOAT64 &&
+            destOperand.registerClass == RegisterClass::FLOAT32) {
+            writeFloatResult(destOperand, static_cast<float>(readOperandAsDouble(srcOperand, DataType::F64)), DataType::F32);
+            m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
+            m_currentInstructionIndex++;
+            return true;
+        }
+
+        if (srcOperand.registerClass == RegisterClass::FLOAT32 &&
+            destOperand.registerClass == RegisterClass::FLOAT64) {
+            writeDoubleResult(destOperand, static_cast<double>(readOperandAsFloat(srcOperand, DataType::F32)), DataType::F64);
+            m_performanceCounters->increment(PerformanceCounterIDs::INSTRUCTIONS_EXECUTED);
             m_currentInstructionIndex++;
             return true;
         }
@@ -2400,6 +2677,23 @@ public:
         if (operand.type == OperandType::REGISTER) {
             m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_READS);
 
+            if (operand.registerClass == RegisterClass::FLOAT16) {
+                const uint16_t halfBits = m_registerBank->readHalfRegisterBits(operand.registerIndex);
+                if (dataType == DataType::F32) {
+                    const float floatValue = halfBitsToFloat(halfBits);
+                    uint32_t floatBits = 0;
+                    std::memcpy(&floatBits, &floatValue, sizeof(floatBits));
+                    return floatBits;
+                }
+                if (dataType == DataType::F64) {
+                    const double doubleValue = static_cast<double>(halfBitsToFloat(halfBits));
+                    uint64_t doubleBits = 0;
+                    std::memcpy(&doubleBits, &doubleValue, sizeof(doubleBits));
+                    return doubleBits;
+                }
+                return halfBits;
+            }
+
             if (dataType == DataType::F32) {
                 float value = m_registerBank->readFloatRegister(operand.registerIndex);
                 uint32_t bits = 0;
@@ -2427,25 +2721,36 @@ public:
         m_registerBank->writeRegister(index, value);
     }
 
-    void storeTypedRegisterValue(size_t index, uint64_t value, DataType dataType) {
+    void storeTypedRegisterValue(const Operand& dest, uint64_t value, DataType dataType) {
         m_performanceCounters->increment(PerformanceCounterIDs::REGISTER_WRITES);
 
-        if (dataType == DataType::F32) {
+        if (dest.registerClass == RegisterClass::FLOAT16 ||
+            dataType == DataType::F16 ||
+            dataType == DataType::B16) {
+            m_registerBank->writeHalfRegisterBits(dest.registerIndex, static_cast<uint16_t>(value & 0xFFFFu));
+            return;
+        }
+
+        if (dest.registerClass == RegisterClass::FLOAT32 ||
+            dataType == DataType::F32 ||
+            dataType == DataType::B32) {
             uint32_t bits = static_cast<uint32_t>(value);
             float floatValue = 0.0f;
             std::memcpy(&floatValue, &bits, sizeof(floatValue));
-            m_registerBank->writeFloatRegister(index, floatValue);
+            m_registerBank->writeFloatRegister(dest.registerIndex, floatValue);
             return;
         }
 
-        if (dataType == DataType::F64) {
+        if (dest.registerClass == RegisterClass::FLOAT64 ||
+            dataType == DataType::F64 ||
+            dataType == DataType::B64) {
             double doubleValue = 0.0;
             std::memcpy(&doubleValue, &value, sizeof(doubleValue));
-            m_registerBank->writeDoubleRegister(index, doubleValue);
+            m_registerBank->writeDoubleRegister(dest.registerIndex, doubleValue);
             return;
         }
 
-        m_registerBank->writeRegister(index, value);
+        m_registerBank->writeRegister(dest.registerIndex, value);
     }
 
     // Helper function to determine memory space based on address

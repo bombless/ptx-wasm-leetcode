@@ -57,6 +57,10 @@ std::optional<DataType> parseDataTypeModifier(const std::string& mod)
     if (mod == ".f16") return DataType::F16;
     if (mod == ".f32") return DataType::F32;
     if (mod == ".f64") return DataType::F64;
+    if (mod == ".b8") return DataType::B8;
+    if (mod == ".b16") return DataType::B16;
+    if (mod == ".b32") return DataType::B32;
+    if (mod == ".b64") return DataType::B64;
     return std::nullopt;
 }
 
@@ -857,6 +861,8 @@ Operand PTXParser::Impl::parseOperand(const std::string &str)
                         op.baseRegisterIndex = regNum;
                     } else if (regType == "rd") {
                         op.baseRegisterIndex = 256 + regNum;
+                    } else if (regType == "h") {
+                        op.baseRegisterIndex = regNum;
                     } else if (regType == "f") {
                         op.baseRegisterIndex = 512 + regNum;
                     } else if (regType == "fd") {
@@ -932,6 +938,8 @@ Operand PTXParser::Impl::parseOperand(const std::string &str)
                         op.baseRegisterIndex = regNum;
                     } else if (regType == "rd") {
                         op.baseRegisterIndex = 256 + regNum;
+                    } else if (regType == "h") {
+                        op.baseRegisterIndex = regNum;
                     } else if (regType == "f") {
                         op.baseRegisterIndex = 512 + regNum;
                     } else if (regType == "fd") {
@@ -1017,12 +1025,19 @@ Operand PTXParser::Impl::parseOperand(const std::string &str)
             // Apply offset based on register type
             if (regType == "r") {
                 op.registerIndex = regNum;  // 0-255
+                op.registerClass = RegisterClass::INTEGER;
             } else if (regType == "rd") {
                 op.registerIndex = 256 + regNum;  // 256-511
+                op.registerClass = RegisterClass::INTEGER64;
+            } else if (regType == "h") {
+                op.registerIndex = regNum;  // Half registers use the float register file.
+                op.registerClass = RegisterClass::FLOAT16;
             } else if (regType == "f") {
                 op.registerIndex = 512 + regNum;  // 512-767
+                op.registerClass = RegisterClass::FLOAT32;
             } else if (regType == "fd") {
                 op.registerIndex = 768 + regNum;  // 768-1023
+                op.registerClass = RegisterClass::FLOAT64;
             } else {
                 // Unknown register type, use base index
                 op.registerIndex = regNum;
