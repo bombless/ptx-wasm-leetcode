@@ -75,6 +75,22 @@ void RegisterBank::writeFloatRegister(size_t registerIndex, float value) {
     m_floatRegisters[registerIndex] = static_cast<uint64_t>(bits);
 }
 
+uint16_t RegisterBank::readHalfRegisterBits(size_t registerIndex) const {
+    if (registerIndex >= m_numFloatRegisters) {
+        throw std::out_of_range("Half register index out of range");
+    }
+
+    return static_cast<uint16_t>(m_floatRegisters[registerIndex] & 0xFFFF);
+}
+
+void RegisterBank::writeHalfRegisterBits(size_t registerIndex, uint16_t value) {
+    if (registerIndex >= m_numFloatRegisters) {
+        throw std::out_of_range("Half register index out of range");
+    }
+
+    m_floatRegisters[registerIndex] = static_cast<uint64_t>(value);
+}
+
 double RegisterBank::readDoubleRegister(size_t registerIndex) const {
     if (registerIndex >= m_numFloatRegisters) {
         throw std::out_of_range("Double register index out of range");

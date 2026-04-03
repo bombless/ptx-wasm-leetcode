@@ -39,6 +39,9 @@ public:
     // 🔧 浮点寄存器操作 (%f0-%fN)
     float readFloatRegister(size_t registerIndex) const;
     void writeFloatRegister(size_t registerIndex, float value);
+
+    uint16_t readHalfRegisterBits(size_t registerIndex) const;
+    void writeHalfRegisterBits(size_t registerIndex, uint16_t value);
     
     double readDoubleRegister(size_t registerIndex) const;
     void writeDoubleRegister(size_t registerIndex, double value);

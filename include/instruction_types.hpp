@@ -17,6 +17,15 @@ enum class OperandType {
     UNKNOWN        // Unknown operand type
 };
 
+enum class RegisterClass {
+    UNKNOWN,
+    INTEGER,
+    INTEGER64,
+    FLOAT16,
+    FLOAT32,
+    FLOAT64
+};
+
 // Instruction types
 enum class InstructionTypes {
     // Arithmetic and logic operations - INTEGER
@@ -148,6 +157,7 @@ struct Operand {
     // Additional flags
     bool isAddress;                // Is this an address operand?
     bool isIndirect;               // Is this an indirect access?
+    RegisterClass registerClass = RegisterClass::UNKNOWN;
     
     // For register-indirect memory addressing [%rX+offset]
     // Since registerIndex and address share the same union slot,
